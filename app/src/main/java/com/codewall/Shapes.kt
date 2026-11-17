@@ -166,10 +166,13 @@ object Shapes {
 
     fun dir(ctx: Context): File { val d = File(ctx.filesDir, "shapes"); d.mkdirs(); return d }
 
+    val tmp = HashMap<String, Mask>()
+
     fun resolve(ctx: Context, id: String): Mask? {
         return try {
             when {
                 id.startsWith("b:") -> builtIn(id.substring(2).toIntOrNull()?.coerceIn(0, NAMES.size - 1) ?: 0)
+                id.startsWith("m:") -> tmp[id]
                 id.startsWith("t:") -> fromText(id.substring(2))
                 id.startsWith("f:") -> {
                     val f = File(dir(ctx), File(id.substring(2)).name)

@@ -3,78 +3,72 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.WallpaperManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
 
-class PreviewView(ctx: Context, private val r: Renderer) : View(ctx) {
-    private val t0 = SystemClock.uptimeMillis()
-    override fun onDraw(c: Canvas) {
-        r.render(c, width.toFloat(), height.toFloat(), (SystemClock.uptimeMillis() - t0) / 1000f, 0.5f)
-        postInvalidateOnAnimation()
-    }
-}
-
 class MainActivity : Activity() {
     private lateinit var p: Prefs
     private lateinit var r: Renderer
     private lateinit var ui: Ui
+    private lateinit var acc: Account
     private lateinit var preview: PreviewView
     private lateinit var content: LinearLayout
     private lateinit var sv: ScrollView
     private var tab = 0
     private var target = 0
+    private var editing = -1
     private var pendingText = ""
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
-        if (k == "shapeA" || k == "shapeB" || k == "stamp" || k == "quality") r.reload()
-    }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, k -> if (k in Prefs.RELOAD_KEYS) r.reload() }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        p = Prefs(this); r = Renderer(this, p); ui = Ui(this)
+        p = Prefs(this); r = Renderer(this, p); ui = Ui(this); acc = Account(this, p, ui)
         val bgc = Color.parseColor("#070B09")
         window.statusBarColor = bgc; window.navigationBarColor = bgc
 
         val page = LinearLayout(this)
         page.orientation = LinearLayout.VERTICAL
         page.setBackgroundColor(bgc)
-        page.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(12))
+        page.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
 
-        val head = LinearLayout(this)
-        head.gravity = Gravity.CENTER_VERTICAL
-        val av = ImageView(this)
-        av.setImageResource(R.drawable.ic_avatar)
-        head.addView(av, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(ui.dp(12), 0, 0, 0)
-        val t1 = TextView(this)
-        t1.text = "PoiPaper"; t1.setTextColor(Color.WHITE); t1.textSize = 20f; t1.typeface = Typeface.DEFAULT_BOLD
-        val t2 = TextView(this)
-        t2.text = "живые 3D-обои из кода"; t2.setTextColor(ui.DIM); t2.textSize = 12f
-        col.addView(t1); col.addView(t2)
-        head.addView(col)
-        page.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
-
-        preview = PreviewView(this, r)
-        preview.background = ui.bg(Color.BLACK, ui.LINE, 24)
+        // верх: мини-телефон с живым предпросмотром + главные кнопки
+        val dm = resources.displayMetrics
+        val ph = (dm.heightPixels * 0.30f).toInt()
+        val pw = (ph * dm.widthPixels.toFloat() / dm.heightPixels).toInt()
+        val top = LinearLayout(this)
+        preview = PreviewView(this, r, p)
+        preview.background = ui.bg(Color.BLACK, ui.LINE, 22)
         preview.clipToOutline = true
         preview.outlineProvider = ViewOutlineProvider.BACKGROUND
-        val ph = (resources.displayMetrics.heightPixels * 0.28f).toInt()
-        page.addView(preview, LinearLayout.LayoutParams(-1, ph).apply { bottomMargin = ui.dp(8) })
+        top.addView(preview, LinearLayout.LayoutParams(pw, ph))
+        val side = LinearLayout(this)
+        side.orientation = LinearLayout.VERTICAL
+        side.gravity = Gravity.CENTER_VERTICAL
+        side.setPadding(ui.dp(12), 0, 0, 0)
+        val av = ImageView(this)
+        av.setImageResource(R.drawable.ic_avatar)
+        av.setOnClickListener { editing = -1; showTab(4) }
+        side.addView(av, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { bottomMargin = ui.dp(6) })
+        val t1 = TextView(this)
+        t1.text = "PoiPaper"; t1.setTextColor(Color.WHITE); t1.textSize = 20f; t1.typeface = Typeface.DEFAULT_BOLD
+        side.addView(t1, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(8) })
+        ui.btn(side, "РАЗМЕТКА", false) { startActivity(Intent(this, LayoutActivity::class.java)) }
+        ui.btn(side, "WORKSHOP", false) { startActivity(Intent(this, WorkshopActivity::class.java)) }
+        ui.btn(side, "УСТАНОВИТЬ", true) { installWallpaper() }
+        top.addView(side, LinearLayout.LayoutParams(0, ph, 1f))
+        page.addView(top, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
 
         val tabs = LinearLayout(this)
         tabs.orientation = LinearLayout.VERTICAL
-        ui.chips(tabs, listOf("Обои", "Фигуры", "Темы", "Виджеты", "Ещё"), 0) { i -> showTab(i) }
+        ui.chips(tabs, listOf("Обои", "Фигуры", "Темы", "Виджеты", "Профиль"), 0) { i -> editing = -1; showTab(i) }
         page.addView(tabs)
 
         content = LinearLayout(this)
@@ -83,17 +77,6 @@ class MainActivity : Activity() {
         sv.isVerticalScrollBarEnabled = false
         sv.addView(content)
         page.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val install = Button(this)
-        install.text = "УСТАНОВИТЬ КАК ОБОИ"
-        install.setTextColor(Color.BLACK)
-        install.background = ui.bg(ui.G, ui.G, 20)
-        install.setOnClickListener {
-            val i = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-            i.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, ComponentName(this@MainActivity, CodeWallpaperService::class.java))
-            try { startActivity(i) } catch (e: Exception) { startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) }
-        }
-        page.addView(install, LinearLayout.LayoutParams(-1, ui.dp(56)).apply { topMargin = ui.dp(8) })
         setContentView(page)
         showTab(0)
     }
@@ -103,6 +86,7 @@ class MainActivity : Activity() {
         p.sp.registerOnSharedPreferenceChangeListener(listener)
         r.reload()
         preview.invalidate()
+        if (tab == 4) showTab(4)
     }
 
     override fun onPause() {
@@ -110,38 +94,75 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    private fun installWallpaper() {
+        val i = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+        i.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, ComponentName(this, CodeWallpaperService::class.java))
+        try { startActivity(i) } catch (e: Exception) { startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) }
+    }
+
     private fun showTab(i: Int) {
         tab = i
         content.removeAllViews()
         sv.scrollTo(0, 0)
-        when (i) { 0 -> tabLook(); 1 -> tabShapes(); 2 -> tabThemes(); 3 -> tabWidgets(); else -> tabMore() }
+        when (i) { 0 -> tabLook(); 1 -> tabShapes(); 2 -> tabThemes(); 3 -> tabWidgets(); else -> tabProfile() }
     }
 
-    // ---------- Вкладка «Обои» ----------
+    private fun pct(v: Float) = "" + (v * 100).toInt() + "%"
+
+    // ---------- ОБОИ ----------
     private fun tabLook() {
-        ui.card(content, "01 / ДВИЖЕНИЕ", "Вращение").let {
-            ui.chips(it, listOf("Вращение", "Покачивание"), p.mode) { i -> p.mode = i }
-            ui.slider(it, "скорость", 0.2f, 3f, p.speed) { v -> p.speed = v }
+        ui.card(content, "01 / СЦЕНА", "Что показывать").let {
+            ui.chips(it, listOf("Код-фигура", "Чёрная дыра", "Подарок", "Сердце"), p.scene) { i -> p.scene = i; showTab(0) }
         }
-        ui.card(content, "02 / ОБЪЁМ", "3D, линии и размер").let {
-            ui.slider(it, "глубина 3D", 0f, 2f, p.depth) { v -> p.depth = v }
-            ui.slider(it, "масштаб фигур", 0.4f, 1.5f, p.scale) { v -> p.scale = v }
-            ui.slider(it, "толщина линий", 0.5f, 3f, p.lineW) { v -> p.lineW = v }
+        if (p.scene == 0) {
+            ui.card(content, "02 / ДВИЖЕНИЕ", "Вращение").let {
+                ui.chips(it, listOf("Вращение", "Покачивание"), p.mode) { i -> p.mode = i }
+                ui.slider(it, "скорость", 0.2f, 3f, p.speed) { v -> p.speed = v }
+                ui.slider(it, "глубина 3D", 0f, 2f, p.depth) { v -> p.depth = v }
+                ui.slider(it, "толщина линий", 0.5f, 3f, p.lineW) { v -> p.lineW = v }
+            }
+            ui.card(content, "03 / ЦВЕТ", "Цвет и фон").let {
+                ui.swatches(it, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE[i]; p.rainbow = false }
+                ui.chips(it, listOf("Один цвет", "Радуга"), if (p.rainbow) 1 else 0) { i -> p.rainbow = (i == 1) }
+                ui.chips(it, listOf("Свечение вкл", "Свечение выкл"), if (p.glow) 0 else 1) { i -> p.glow = (i == 0) }
+                ui.chips(it, listOf("Чёрный", "Градиент", "Сетка"), p.bg) { i -> p.bg = i }
+            }
+        } else {
+            ui.card(content, "02 / СЦЕНА", Formats.SCENES[p.scene]).let {
+                ui.slider(it, "скорость", 0.3f, 2.5f, p.speed) { v -> p.speed = v }
+                ui.slider(it, "плотность частиц", 0.4f, 1.5f, p.density) { v -> p.density = v }
+                if (p.scene == 2) {
+                    ui.chips(it, listOf("Мишка", "Моя фигура"), p.target) { i -> p.target = i }
+                    ui.field(it, "Надпись на сердце", p.label) { s -> p.label = s.take(14) }
+                }
+                if (p.scene == 3) {
+                    ui.field(it, "Слова через запятую", p.words) { s -> p.words = s.take(200) }
+                    val sp = View(this); it.addView(sp, LinearLayout.LayoutParams(-1, ui.dp(8)))
+                    ui.field(it, "Письмо (печатается внизу)", p.message) { s -> p.message = s.take(120) }
+                }
+            }
+            ui.card(content, "03 / ЦВЕТ", "Цвет сцены").let {
+                ui.swatches(it, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE[i]; p.rainbow = false }
+            }
         }
-        ui.card(content, "03 / ЦВЕТ", "Цвет и фон").let {
-            ui.swatches(it, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE[i]; p.rainbow = false }
-            ui.chips(it, listOf("Один цвет", "Радуга"), if (p.rainbow) 1 else 0) { i -> p.rainbow = (i == 1) }
-            ui.chips(it, listOf("Свечение вкл", "Свечение выкл"), if (p.glow) 0 else 1) { i -> p.glow = (i == 0) }
-            ui.chips(it, listOf("Чёрный", "Градиент", "Сетка"), p.bg) { i -> p.bg = i }
+        ui.card(content, "04 / РАЗМЕР И МЕСТО", "Положение на экране").let {
+            ui.slider(it, "размер", 0.4f, 2f, p.scale) { v -> p.scale = v }
+            ui.slider(it, "по горизонтали", 0f, 1f, p.posX, { v -> pct(v) }) { v -> p.posX = v }
+            ui.slider(it, "по вертикали", 0f, 1f, p.posY, { v -> pct(v) }) { v -> p.posY = v }
+            ui.btn(it, "ДВИГАТЬ ПАЛЬЦЕМ НА ЭКРАНЕ", true) { startActivity(Intent(this, LayoutActivity::class.java)) }
+            ui.btn(it, "СБРОСИТЬ ПОЛОЖЕНИЕ", false) { p.posX = 0.5f; p.posY = 0.46f; p.scale = 1f; showTab(0) }
         }
-        ui.card(content, "04 / ПЛАВНОСТЬ", "Частота кадров").let {
+        ui.card(content, "05 / БАТАРЕЯ", "Плавность и экономия").let {
             val f = listOf(30, 45, 60, 90, 120)
-            ui.chips(it, f.map { x -> "$x" }, f.indexOf(p.fps).coerceAtLeast(2)) { i -> p.fps = f[i] }
-            ui.note(it, "Выше частота — плавнее, но больше расход батареи. 60 FPS — баланс.")
+            ui.chips(it, f.map { x -> "$x" }, f.indexOf(p.fps).coerceAtLeast(0)) { i -> p.fps = f[i] }
+            val ecos = listOf(0, 30, 60, 120)
+            ui.chips(it, listOf("Не замирать", "30 с", "1 мин", "2 мин"), ecos.indexOf(p.eco).coerceAtLeast(0)) { i -> p.eco = ecos[i] }
+            ui.chips(it, listOf("Лёгкое", "Баланс", "Красивое"), p.quality) { i -> p.quality = i }
+            ui.toggle(it, "Экономить при низком заряде", p.saver) { v -> p.saver = v }
         }
     }
 
-    // ---------- Вкладка «Фигуры» ----------
+    // ---------- ФИГУРЫ ----------
     private fun curId() = if (target == 1) p.shapeB else p.shapeA
 
     private fun setTarget(id: String) {
@@ -152,8 +173,7 @@ class MainActivity : Activity() {
     private fun tabShapes() {
         ui.card(content, "01 / ВЫБОР", "Какую фигуру менять").let {
             ui.chips(it, listOf("Фигура 1", "Фигура 2"), target) { i -> target = i; showTab(1) }
-            if (target == 1) ui.btn(it, "УБРАТЬ ФИГУРУ 2", false) { p.shapeB = ""; showTab(1) }
-            ui.note(it, if (target == 1 && p.shapeB.isEmpty()) "Фигура 2 выключена. Выбери любую ниже, чтобы показать две фигуры." else "Текущая: " + Shapes.nameOf(curId()))
+            if (target == 1 && p.shapeB.isNotEmpty()) ui.btn(it, "УБРАТЬ ФИГУРУ 2", false) { p.shapeB = ""; showTab(1) }
         }
         ui.card(content, "02 / КАТАЛОГ", "Встроенные фигуры").let {
             val names = Shapes.NAMES
@@ -169,9 +189,7 @@ class MainActivity : Activity() {
             }
         }
         ui.card(content, "03 / МОИ ФИГУРЫ", "Из фото и файлов").let {
-            val mine = Shapes.list(this)
-            if (mine.isEmpty()) ui.note(it, "Пока пусто. Создай фигуру из фото или импортируй .poi.")
-            for (f in mine) {
+            for (f in Shapes.list(this)) {
                 val row = LinearLayout(this)
                 row.gravity = Gravity.CENTER_VERTICAL
                 val tv = TextView(this)
@@ -188,23 +206,19 @@ class MainActivity : Activity() {
                 }
                 it.addView(row, LinearLayout.LayoutParams(-1, ui.dp(44)))
             }
-        }
-        ui.card(content, "04 / СОЗДАТЬ", "Новая фигура").let {
             ui.btn(it, "ИЗ ФОТО (РЕДАКТОР)", true) {
                 val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
                 i.addCategory(Intent.CATEGORY_OPENABLE); i.type = "image/*"
                 startActivityForResult(i, 1)
             }
             ui.btn(it, "ИЗ ТЕКСТА", false) {
-                ui.prompt("Текст фигуры", "до 14 символов", "POI") { t ->
-                    if (t.isNotEmpty()) { setTarget("t:" + t.take(14)); showTab(1) }
-                }
+                ui.prompt("Текст фигуры", "до 14 символов", "POI") { t -> if (t.isNotEmpty()) { setTarget("t:" + t.take(14)); showTab(1) } }
             }
             ui.btn(it, "ИМПОРТ .poi / .poa", false) { pickFile() }
         }
     }
 
-    // ---------- Вкладка «Темы» ----------
+    // ---------- ТЕМЫ ----------
     private fun tabThemes() {
         ui.card(content, "ТЕМЫ", "Готовые стили в один клик").let { c ->
             for (t in Themes.ALL) {
@@ -226,48 +240,88 @@ class MainActivity : Activity() {
                 d.text = t.desc; d.setTextColor(ui.DIM); d.textSize = 12f
                 col.addView(n); col.addView(d)
                 row.addView(col)
-                row.setOnClickListener { Themes.apply(p, t); ui.toast("Тема «" + t.name + "» применена") }
+                row.setOnClickListener { Themes.apply(p, t); ui.toast(t.name) }
                 c.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
             }
         }
     }
 
-    // ---------- Вкладка «Виджеты» ----------
+    // ---------- ВИДЖЕТЫ ----------
     private fun tabWidgets() {
-        ui.card(content, "ВИДЖЕТЫ", "Что показывать на обоях").let {
-            ui.toggle(it, "Часы", p.wClock) { v -> p.wClock = v }
-            ui.toggle(it, "Дата", p.wDate) { v -> p.wDate = v }
-            ui.toggle(it, "Заряд батареи", p.wBattery) { v -> p.wBattery = v }
-            val sp = View(this); it.addView(sp, LinearLayout.LayoutParams(-1, ui.dp(8)))
-            ui.field(it, "Свой текст (до 24 символов)", p.wText) { s -> p.wText = s.take(24) }
-            val sp2 = View(this); it.addView(sp2, LinearLayout.LayoutParams(-1, ui.dp(10)))
-            ui.chips(it, listOf("Сверху", "Снизу"), p.wPos) { i -> p.wPos = i }
-            ui.note(it, "Если виджеты перекрывают фигуру, уменьши масштаб на вкладке «Обои».")
+        val wl = Widgets.load(p)
+        if (editing in wl.indices) { editWidget(wl, editing); return }
+        ui.card(content, "ВИДЖЕТЫ", "На экране: " + wl.size).let { c ->
+            for (i in wl.indices) {
+                val w = wl[i]
+                val row = LinearLayout(this)
+                row.gravity = Gravity.CENTER_VERTICAL
+                val tv = TextView(this)
+                tv.text = Widgets.TYPES[w.type] + " · " + Widgets.STYLES[w.type][w.style]
+                tv.setTextColor(Color.WHITE); tv.textSize = 15f
+                tv.setOnClickListener { editing = i; showTab(3) }
+                row.addView(tv, LinearLayout.LayoutParams(0, -2, 1f))
+                ui.small(row, "ИЗМЕНИТЬ") { editing = i; showTab(3) }
+                ui.small(row, "УДАЛИТЬ") { wl.removeAt(i); Widgets.save(p, wl); showTab(3) }
+                c.addView(row, LinearLayout.LayoutParams(-1, ui.dp(44)))
+            }
+            if (wl.size < Widgets.MAX) ui.btn(c, "+ ДОБАВИТЬ ВИДЖЕТ", true) {
+                AlertDialog.Builder(this).setTitle("Тип виджета").setItems(Widgets.TYPES.toTypedArray()) { _, k ->
+                    wl.add(Widgets.make(k, p.colorInt, wl.size)); Widgets.save(p, wl); editing = wl.size - 1; showTab(3)
+                }.show()
+            }
+            if (wl.isNotEmpty()) ui.btn(c, "ПЕРЕМЕСТИТЬ ПАЛЬЦЕМ", false) { startActivity(Intent(this, LayoutActivity::class.java)) }
         }
     }
 
-    // ---------- Вкладка «Ещё» ----------
-    private fun tabMore() {
-        ui.card(content, "01 / ПРОИЗВОДИТЕЛЬНОСТЬ", "Чтобы не лагало").let {
-            ui.chips(it, listOf("Лёгкое", "Баланс", "Красивое"), p.quality) { i -> p.quality = i }
-            ui.toggle(it, "Экономия при низком заряде", p.saver) { v -> p.saver = v }
-            ui.note(it, "«Лёгкое» рисует меньше символов. В режиме экономии системы частота кадров снижается до 30.")
+    private fun editWidget(wl: MutableList<Wdg>, idx: Int) {
+        val w = wl[idx]
+        fun save() { Widgets.save(p, wl) }
+        ui.card(content, "ВИДЖЕТ " + (idx + 1), Widgets.TYPES[w.type]).let { c ->
+            ui.chips(c, Widgets.STYLES[w.type], w.style) { i -> w.style = i; save() }
+            ui.chips(c, Widgets.ANIMS, w.anim) { i -> w.anim = i; save() }
+            ui.swatches(c, Prefs.PALETTE, Prefs.PALETTE.indexOf(w.color)) { i -> w.color = Prefs.PALETTE[i]; save() }
+            ui.slider(c, "размер", 0.4f, 3f, w.size) { v -> w.size = v; save() }
+            ui.slider(c, "по горизонтали", 0f, 1f, w.x, { v -> pct(v) }) { v -> w.x = v; save() }
+            ui.slider(c, "по вертикали", 0f, 1f, w.y, { v -> pct(v) }) { v -> w.y = v; save() }
+            if (w.type == 3) ui.field(c, "Текст (до 24 символов)", w.text) { s -> w.text = s.take(24); save() }
+            val sp = View(this); c.addView(sp, LinearLayout.LayoutParams(-1, ui.dp(10)))
+            ui.btn(c, "ПЕРЕМЕСТИТЬ ПАЛЬЦЕМ", true) { startActivity(Intent(this, LayoutActivity::class.java).putExtra("sel", idx)) }
+            ui.btn(c, "ГОТОВО", false) { editing = -1; showTab(3) }
         }
-        ui.card(content, "02 / ПАКИ", "Файлы .poa").let {
-            ui.field(it, "Твой ник автора", p.author) { s -> p.author = s.take(24).ifEmpty { "аноним" } }
-            val sp = View(this); it.addView(sp, LinearLayout.LayoutParams(-1, ui.dp(10)))
+    }
+
+    // ---------- ПРОФИЛЬ ----------
+    private fun tabProfile() {
+        ui.card(content, "ПРОФИЛЬ", if (acc.loggedIn()) p.email else "Гость").let { c ->
+            val row = LinearLayout(this)
+            row.gravity = Gravity.CENTER_VERTICAL
+            val av = ImageView(this)
+            av.setImageResource(R.drawable.ic_avatar)
+            row.addView(av, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)))
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.setPadding(ui.dp(12), 0, 0, 0)
+            ui.field(col, "Твой ник", p.author) { s -> p.author = s.take(24).ifEmpty { "аноним" } }
+            row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+            c.addView(row)
+            val sp = View(this); c.addView(sp, LinearLayout.LayoutParams(-1, ui.dp(12)))
+            if (acc.loggedIn()) {
+                ui.btn(c, "ОТКРЫТЬ WORKSHOP", true) { startActivity(Intent(this, WorkshopActivity::class.java)) }
+                ui.btn(c, "ВЫЙТИ", false) { acc.logout(); showTab(4) }
+            } else {
+                ui.btn(c, "ВОЙТИ ЧЕРЕЗ GOOGLE", true) { acc.google() }
+                ui.btn(c, "ВОЙТИ ПО ПОЧТЕ", false) { acc.loginDialog { showTab(4) } }
+            }
+        }
+        ui.card(content, "ФАЙЛЫ", ".poa и .poi").let {
             ui.btn(it, "ИМПОРТ .poa / .poi", true) { pickFile() }
             ui.btn(it, "ЭКСПОРТ ТЕКУЩИХ ОБОЕВ В .poa", false) { exportPoa() }
-            ui.note(it, "Пак хранит фигуру, цвета, движение и виджеты. Перед применением ты видишь, что внутри, и можешь снять галочки с лишнего.")
+            ui.btn(it, "ОТКАТИТЬ ПОСЛЕДНИЙ ПАК", false) {
+                if (p.restoreBackup()) { r.reload(); ui.toast("Откат выполнен"); showTab(4) } else ui.toast("Нечего откатывать")
+            }
         }
-        ui.card(content, "03 / БЕЗОПАСНОСТЬ", "Проверка файлов").let {
-            ui.note(it, "Файлы .poi и .poa — только данные, кода в них нет. Приложение принимает лишь известные поля, отклоняет ссылки, слишком большие файлы и значения вне диапазона. Разрешений у приложения нет: оно не просит ни доступ к файлам, ни интернет.")
-        }
-        ui.card(content, "04 / WORKSHOP", "Общая галерея").let {
-            ui.note(it, "Скоро: каталог паков с категориями, вход через Google или почту, загрузка своих работ с проверкой перед публикацией.")
-        }
-        ui.card(content, "О ПРИЛОЖЕНИИ", "PoiPaper 3.0").let {
-            ui.note(it, "Живые 3D-обои из строк кода. Фигуры, темы, виджеты, редактор фото и свои форматы .poi и .poa.")
+        ui.card(content, "ЗАЩИТА", "Как проверяются работы").let {
+            ui.note(it, "Работы — только данные без кода. Лишние поля, ссылки и неверные значения отклоняются, контрольная сумма ловит подмену, вход шифруется ключом Android Keystore.")
         }
     }
 
@@ -293,14 +347,12 @@ class MainActivity : Activity() {
     }
 
     private fun exportPoa() {
-        ui.prompt("Название пака", "например: Неоновый череп", "") { name ->
+        ui.prompt("Название пака", "например: Неоновая чёрная дыра", "") { name ->
             if (name.isNotEmpty()) {
-                AlertDialog.Builder(this).setTitle("Категория")
-                    .setItems(Formats.CATEGORIES.toTypedArray()) { _, w ->
-                        val m = Shapes.resolve(this, p.shapeA)
-                        pendingText = Formats.buildPoa(p, Shapes.nameOf(p.shapeA), m, name, p.author, Formats.CATEGORIES[w], "")
-                        createDoc("$name.poa")
-                    }.show()
+                AlertDialog.Builder(this).setTitle("Категория").setItems(Formats.CATEGORIES.toTypedArray()) { _, w ->
+                    pendingText = Formats.buildPoa(p, Shapes.nameOf(p.shapeA), Shapes.resolve(this, p.shapeA), name, p.author, Formats.CATEGORIES[w], "")
+                    createDoc("$name.poa")
+                }.show()
             }
         }
     }
@@ -309,7 +361,7 @@ class MainActivity : Activity() {
         try {
             val text = Formats.readText(contentResolver, uri)
             when (Formats.kind(text)) {
-                "poa" -> showPoa(Formats.parsePoa(text))
+                "poa" -> ui.showPoa(Formats.parsePoa(text), p) { r.reload(); showTab(tab) }
                 "poi" -> {
                     val sh = Formats.parsePoi(text)
                     setTarget(Shapes.save(this, sh.first, sh.second))
@@ -321,24 +373,6 @@ class MainActivity : Activity() {
         } catch (e: Formats.Invalid) {
             AlertDialog.Builder(this).setTitle("Файл отклонён").setMessage(e.message).setPositiveButton("ОК", null).show()
         }
-    }
-
-    private fun showPoa(poa: Formats.Poa) {
-        val items = Formats.items(poa)
-        val labels = items.map { it.second }.toTypedArray()
-        val checked = BooleanArray(items.size) { true }
-        AlertDialog.Builder(this)
-            .setTitle(poa.name + "\n" + poa.author + " · " + poa.category)
-            .setMultiChoiceItems(labels, checked) { _, which, v -> checked[which] = v }
-            .setPositiveButton("ПРИМЕНИТЬ") { _, _ ->
-                val keys = HashSet<String>()
-                for (k in items.indices) if (checked[k]) keys.add(items[k].first)
-                Formats.applyPoa(p, this, poa, keys)
-                r.reload()
-                ui.toast("Применено")
-                showTab(tab)
-            }
-            .setNegativeButton("Отмена", null).show()
     }
 
     override fun onActivityResult(rc: Int, res: Int, d: Intent?) {

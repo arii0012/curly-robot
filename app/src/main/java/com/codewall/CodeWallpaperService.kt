@@ -1,6 +1,9 @@
 package com.codewall
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -19,15 +22,33 @@ class CodeWallpaperService : WallpaperService() {
         private val pm = this@CodeWallpaperService.getSystemService(Context.POWER_SERVICE) as PowerManager
         private val t0 = SystemClock.uptimeMillis()
         private var visible = false
+        private var shownAt = 0L
+        private var lowBat = false
+        private var lastBat = 0L
+
         private val tick = object : Runnable {
             override fun run() {
                 draw()
-                if (visible) {
-                    val saving = prefs.saver && pm.isPowerSaveMode
-                    val fps = (if (saving) min(prefs.fps, 30) else prefs.fps).coerceIn(10, 144)
-                    h.postDelayed(this, 1000L / fps)
-                }
+                if (!visible) return
+                val now = SystemClock.uptimeMillis()
+                if (now - lastBat > 15000) { lastBat = now; lowBat = lowBattery() }
+                val saving = prefs.saver && (pm.isPowerSaveMode || lowBat)
+                var fps = prefs.fps
+                if (saving) fps = min(fps, 24)
+                var freeze = prefs.eco
+                if (saving && (freeze == 0 || freeze > 20)) freeze = 20
+                // экономия: через N секунд кадр замирает и больше не перерисовывается
+                if (freeze > 0 && now - shownAt > freeze * 1000L) return
+                h.postDelayed(this, 1000L / fps.coerceIn(10, 144))
             }
+        }
+
+        private fun lowBattery(): Boolean {
+            val i = this@CodeWallpaperService.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
+            val l = i.getIntExtra(BatteryManager.EXTRA_LEVEL, 100)
+            val st = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            val charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL
+            return l in 0..20 && !charging
         }
 
         override fun onCreate(sh: SurfaceHolder) {
@@ -41,12 +62,12 @@ class CodeWallpaperService : WallpaperService() {
             super.onDestroy()
         }
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-            if (key == "shapeA" || key == "shapeB" || key == "stamp" || key == "quality") renderer.reload()
+            if (key != null && key in Prefs.RELOAD_KEYS) renderer.reload()
         }
         override fun onVisibilityChanged(v: Boolean) {
             visible = v
             h.removeCallbacks(tick)
-            if (v) tick.run()
+            if (v) { shownAt = SystemClock.uptimeMillis(); tick.run() }
         }
         override fun onSurfaceChanged(sh: SurfaceHolder?, f: Int, w: Int, hh: Int) {
             super.onSurfaceChanged(sh, f, w, hh); draw()
@@ -58,7 +79,7 @@ class CodeWallpaperService : WallpaperService() {
                 try { holder.lockCanvas() } catch (e2: Exception) { null }
             } ?: return
             try {
-                renderer.render(c, c.width.toFloat(), c.height.toFloat(), (SystemClock.uptimeMillis() - t0) / 1000f, 0.46f)
+                renderer.render(c, c.width.toFloat(), c.height.toFloat(), (SystemClock.uptimeMillis() - t0) / 1000f)
             } finally {
                 holder.unlockCanvasAndPost(c)
             }

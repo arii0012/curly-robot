@@ -190,4 +190,22 @@ class Ui(private val a: Activity) {
             .setPositiveButton("ОК") { _, _ -> ok(et.text.toString().trim()) }
             .setNegativeButton("Отмена", null).show()
     }
+
+    fun showPoa(poa: Formats.Poa, p: Prefs, done: () -> Unit) {
+        val items = Formats.items(poa)
+        val labels = items.map { it.second }.toTypedArray()
+        val checked = BooleanArray(items.size) { true }
+        AlertDialog.Builder(a)
+            .setTitle(poa.name + "\n" + poa.author + " · " + poa.category + (if (poa.signed) " · ✓" else " · без подписи"))
+            .setMultiChoiceItems(labels, checked) { _, which, v -> checked[which] = v }
+            .setPositiveButton("ПРИМЕНИТЬ") { _, _ ->
+                val keys = HashSet<String>()
+                for (k in items.indices) if (checked[k]) keys.add(items[k].first)
+                p.saveBackup()
+                Formats.applyPoa(p, a, poa, keys)
+                toast("Применено. Откатить: Профиль → Файлы")
+                done()
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
 }
