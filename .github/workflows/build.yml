@@ -13,19 +13,6 @@ jobs:
             rm -f *.kt AndroidManifest.xml colors.xml strings.xml wallpaper.xml ic_avatar.xml ic_fg.xml ic_launcher.xml
             unzip -oq "$Z"
           fi
-      - name: Write server config
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          cat > app/src/main/java/com/codewall/Config.kt <<EOF
-          package com.codewall
-          object Config {
-              const val URL = "$SUPABASE_URL"
-              const val KEY = "$SUPABASE_KEY"
-              val ok: Boolean get() = URL.startsWith("https://") && KEY.length > 20
-          }
-          EOF
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v3
