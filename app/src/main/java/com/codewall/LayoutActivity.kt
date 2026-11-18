@@ -67,7 +67,7 @@ class LayoutActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        p = Prefs(this); ui = Ui(this)
+        p = Prefs(this); Skin.load(p); ui = Ui(this)
         val r = Renderer(this, p)
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
@@ -124,7 +124,7 @@ class LayoutActivity : Activity() {
             val tv = TextView(this)
             tv.text = names[i]; tv.textSize = 14f; tv.gravity = android.view.Gravity.CENTER
             val on = (i - 1) == pv.selected
-            tv.setTextColor(if (on) Color.BLACK else Color.WHITE)
+            tv.setTextColor(if (on) ui.ON else Color.WHITE)
             tv.background = ui.bg(if (on) ui.G else ui.DARK, if (on) ui.G else ui.LINE, 14)
             tv.setPadding(ui.dp(14), 0, ui.dp(14), 0)
             tv.setOnClickListener { pv.selected = i - 1; buildTargets(); syncSeek() }

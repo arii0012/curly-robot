@@ -1,35 +1,53 @@
 package com.codewall
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
 import kotlin.math.min
 
-class Wdg(var type: Int, var style: Int, var color: Int, var size: Float, var x: Float, var y: Float, var anim: Int, var text: String)
+class Wdg(var type: Int, var style: Int, var color: Int, var size: Float, var x: Float, var y: Float, var anim: Int, var text: String,
+          var font: Int = 0, var op: Float = 1f, var plate: Int = 0, var rot: Float = 0f, var glow: Boolean = false)
 
 object Widgets {
-    val TYPES = listOf("Часы", "Дата", "Батарея", "Текст", "Эквалайзер", "Пульс")
+    val TYPES = listOf("Часы", "Дата", "Батарея", "Текст", "Эквалайзер", "Пульс", "Приветствие", "Дни до даты", "Год", "Мировое время", "Цитата")
     val STYLES = listOf(
-        listOf("Моно", "Тонкие", "Неон", "Бинарные"), listOf("Короткая", "Полная", "Цифры"),
-        listOf("Текст", "Кольцо", "Полоса"), listOf("Обычный", "Рамка", "Скобки"),
-        listOf("Столбики", "Точки"), listOf("ЭКГ")
+        listOf("Крупные", "Неон", "Бинарные", "Аналоговые", "Секунды"), listOf("Короткая", "Полная", "Цифры", "Календарь"),
+        listOf("Текст", "Кольцо", "Полоса"), listOf("Обычный", "Рамка", "Скобки"), listOf("Столбики", "Точки"), listOf("ЭКГ"),
+        listOf("В строку", "Крупно"), listOf("Число", "Полоса"), listOf("Полоса", "Кольцо"), listOf("Компакт"), listOf("По центру")
     )
     val ANIMS = listOf("Нет", "Пульс", "Глитч", "Печать", "Радуга")
-    const val MAX = 8
+    val FONTS = listOf("Моно", "Тонкий", "Жирный", "Serif", "Рукописный")
+    val PLATES = listOf("Нет", "Заливка", "Рамка")
+    val QUOTES = listOf("Делай, что можешь.", "Всё впереди.", "Меньше слов — больше кода.", "Будь проще.", "Не сдавайся.",
+        "Stay curious.", "Keep it simple.", "Just ship it.", "Каждый день — новый коммит.", "Дыши. Всё получится.",
+        "Сделано лучше, чем идеально.", "Тише едешь — дальше будешь.")
+    const val MAX = 10
 
-    fun make(type: Int, color: Int, slot: Int): Wdg =
-        Wdg(type, 0, color, 1f, 0.5f, (0.1f + 0.1f * slot).coerceAtMost(0.9f), 0, if (type == 3) "PoiPaper" else "")
+    fun make(type: Int, color: Int, slot: Int): Wdg {
+        val w = Wdg(type, 0, color, 1f, 0.5f, (0.1f + 0.1f * slot).coerceAtMost(0.9f), 0, "")
+        w.text = when (type) {
+            3 -> "PoiPaper"
+            7 -> LocalDate.now().plusDays(30).toString() + ";Событие"
+            9 -> "Токио;9"
+            else -> ""
+        }
+        return w
+    }
 
     fun fromJson(o: JSONObject): Wdg {
         val t = o.optInt("t", 0).coerceIn(0, TYPES.size - 1)
         return Wdg(t, o.optInt("s", 0).coerceIn(0, STYLES[t].size - 1), o.optInt("c", 0xFFFFFFFF.toInt()) or 0xFF000000.toInt(),
             o.optDouble("z", 1.0).toFloat().coerceIn(0.4f, 3f), o.optDouble("x", 0.5).toFloat().coerceIn(0f, 1f),
             o.optDouble("y", 0.12).toFloat().coerceIn(0f, 1f), o.optInt("a", 0).coerceIn(0, ANIMS.size - 1),
-            o.optString("tx", "").filter { it >= ' ' }.take(24))
+            o.optString("tx", "").filter { it >= ' ' }.take(40),
+            o.optInt("f", 0).coerceIn(0, FONTS.size - 1), o.optDouble("o", 1.0).toFloat().coerceIn(0.2f, 1f),
+            o.optInt("pl", 0).coerceIn(0, 2), o.optDouble("r", 0.0).toFloat().coerceIn(-90f, 90f), o.optBoolean("g", false))
     }
 
     fun toJson(w: Wdg): JSONObject {
         val o = JSONObject()
         o.put("t", w.type); o.put("s", w.style); o.put("c", w.color); o.put("z", w.size.toDouble())
         o.put("x", w.x.toDouble()); o.put("y", w.y.toDouble()); o.put("a", w.anim); o.put("tx", w.text)
+        o.put("f", w.font); o.put("o", w.op.toDouble()); o.put("pl", w.plate); o.put("r", w.rot.toDouble()); o.put("g", w.glow)
         return o
     }
 

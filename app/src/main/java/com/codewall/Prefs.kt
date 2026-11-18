@@ -28,6 +28,10 @@ class Prefs(ctx: Context, name: String = "cfg") {
     var rainbow: Boolean get() = sb("rainbow", false); set(v) = pb("rainbow", v)
     var glow: Boolean get() = sb("glow", true); set(v) = pb("glow", v)
     var bg: Int get() = si("bg", 0); set(v) = pi("bg", v)
+    var bright: Float get() = sf("bright", 1f); set(v) = pf("bright", v)
+    var night: Boolean get() = sb("night", false); set(v) = pb("night", v)
+    var touch: Boolean get() = sb("touch", true); set(v) = pb("touch", v)
+    var parallax: Boolean get() = sb("parallax", true); set(v) = pb("parallax", v)
     var target: Int get() = si("target", 0); set(v) = pi("target", v)
     var words: String get() = ss("words", "I love you,Sweetheart,Je t'aime,Forever,Always,Love,Te amo,Me & you,Mi vida"); set(v) = ps("words", v)
     var message: String get() = ss("message", "Каждый удар моего сердца носит твоё имя."); set(v) = ps("message", v)
@@ -39,26 +43,29 @@ class Prefs(ctx: Context, name: String = "cfg") {
     var saver: Boolean get() = sb("saver", true); set(v) = pb("saver", v)
     var author: String get() = ss("author", "аноним"); set(v) = ps("author", v)
     var stamp: Long get() = sp.getLong("stamp", 0); set(v) { sp.edit().putLong("stamp", v).apply() }
-    // аккаунт Workshop
-    var token: String get() = Crypto.dec(ss("token", "")); set(v) = ps("token", Crypto.enc(v))
-    var refresh: String get() = Crypto.dec(ss("refresh", "")); set(v) = ps("refresh", Crypto.enc(v))
-    var uid: String get() = ss("uid", ""); set(v) = ps("uid", v)
-    var email: String get() = ss("email", ""); set(v) = ps("email", v)
+    // оформление приложения
+    var skin: Int get() = si("skin", 0); set(v) = pi("skin", v)
+    var accentCustom: Int get() = si("accentCustom", 0); set(v) = pi("accentCustom", v)
+    var corners: Int get() = si("corners", 1); set(v) = pi("corners", v)
+    var skinWithTheme: Boolean get() = sb("skinWithTheme", true); set(v) = pb("skinWithTheme", v)
+    // автосмена сборок
+    var shuffle: Int get() = si("shuffle", 0); set(v) = pi("shuffle", v)
+    var shuffleAt: Long get() = sp.getLong("shuffleAt", 0); set(v) { sp.edit().putLong("shuffleAt", v).apply() }
+    var shuffleIdx: Int get() = si("shuffleIdx", 0); set(v) = pi("shuffleIdx", v)
 
-    fun saveBackup() {
+    fun snapshot(skip: Set<String>): String {
         val o = JSONObject()
         for ((k, v) in sp.all) {
-            if (k in SKIP) continue
+            if (k in skip) continue
             when (v) {
                 is Int -> o.put(k, "i:$v"); is Long -> o.put(k, "l:$v"); is Float -> o.put(k, "f:$v")
                 is Boolean -> o.put(k, "b:$v"); is String -> o.put(k, "s:$v")
             }
         }
-        ps("backup", o.toString())
+        return o.toString()
     }
 
-    fun restoreBackup(): Boolean {
-        val txt = sp.getString("backup", null) ?: return false
+    fun restore(txt: String): Boolean {
         return try {
             val o = JSONObject(txt); val e = sp.edit(); val it = o.keys()
             while (it.hasNext()) {
@@ -72,12 +79,20 @@ class Prefs(ctx: Context, name: String = "cfg") {
         } catch (ex: Exception) { false }
     }
 
+    fun saveBackup() { ps("backup", snapshot(SKIP)) }
+    fun restoreBackup(): Boolean { val t = sp.getString("backup", null) ?: return false; return restore(t) }
+
     companion object {
         val PALETTE = intArrayOf(
             0xFFFFFFFF.toInt(), 0xFF4DFF88.toInt(), 0xFFFFB000.toInt(), 0xFF3DD6FF.toInt(),
             0xFFFF5DA8.toInt(), 0xFFFF4D4D.toInt(), 0xFFB07CFF.toInt(), 0xFFFF6A00.toInt()
         )
-        val SKIP = setOf("backup", "token", "refresh", "uid", "email", "author")
+        val PALETTE2 = intArrayOf(
+            0xFFFFD84D.toInt(), 0xFFA3FF3D.toInt(), 0xFF00E5B0.toInt(), 0xFF4D7CFF.toInt(),
+            0xFFE040FB.toInt(), 0xFFFF8FC7.toInt(), 0xFFB0B8C0.toInt(), 0xFF8B5E3C.toInt()
+        )
+        val SKIP = setOf("backup", "token", "refresh", "uid", "email", "author", "shuffleAt", "shuffleIdx")
+        val PRESET_SKIP = SKIP + setOf("skin", "accentCustom", "corners", "skinWithTheme", "shuffle")
         val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt")
     }
 }

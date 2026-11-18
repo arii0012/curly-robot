@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import kotlin.math.min
 
@@ -37,7 +38,7 @@ class CodeWallpaperService : WallpaperService() {
                 if (saving) fps = min(fps, 24)
                 var freeze = prefs.eco
                 if (saving && (freeze == 0 || freeze > 20)) freeze = 20
-                // экономия: через N секунд кадр замирает и больше не перерисовывается
+                // экономия: через N секунд кадр замирает; касание будит
                 if (freeze > 0 && now - shownAt > freeze * 1000L) return
                 h.postDelayed(this, 1000L / fps.coerceIn(10, 144))
             }
@@ -53,6 +54,7 @@ class CodeWallpaperService : WallpaperService() {
 
         override fun onCreate(sh: SurfaceHolder) {
             super.onCreate(sh)
+            setTouchEventsEnabled(true)
             prefs.sp.registerOnSharedPreferenceChangeListener(this)
             renderer.reload()
         }
@@ -67,7 +69,20 @@ class CodeWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(v: Boolean) {
             visible = v
             h.removeCallbacks(tick)
-            if (v) { shownAt = SystemClock.uptimeMillis(); tick.run() }
+            if (v) {
+                Presets.maybeSwitch(this@CodeWallpaperService, prefs)
+                shownAt = SystemClock.uptimeMillis()
+                tick.run()
+            }
+        }
+        override fun onOffsetsChanged(x: Float, y: Float, xs: Float, ys: Float, xp: Int, yp: Int) {
+            renderer.parX = x
+        }
+        override fun onTouchEvent(e: MotionEvent) {
+            if (e.actionMasked != MotionEvent.ACTION_DOWN || !prefs.touch) return
+            renderer.poke(e.x, e.y)
+            shownAt = SystemClock.uptimeMillis()
+            if (visible) { h.removeCallbacks(tick); tick.run() }
         }
         override fun onSurfaceChanged(sh: SurfaceHolder?, f: Int, w: Int, hh: Int) {
             super.onSurfaceChanged(sh, f, w, hh); draw()

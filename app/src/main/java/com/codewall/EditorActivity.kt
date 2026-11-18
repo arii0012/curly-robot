@@ -128,12 +128,12 @@ class EditorActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        ui = Ui(this); p = Prefs(this)
+        p = Prefs(this); Skin.load(p); ui = Ui(this)
         val uri = intent.data
         val bmp = if (uri != null) loadBitmap(uri) else null
         if (bmp == null) { Toast.makeText(this, "Не удалось открыть изображение", Toast.LENGTH_SHORT).show(); finish(); return }
         src = bmp
-        val bgc = Color.parseColor("#070B09")
+        val bgc = ui.BG
         window.statusBarColor = bgc; window.navigationBarColor = bgc
 
         val page = LinearLayout(this)
@@ -179,7 +179,7 @@ class EditorActivity : Activity() {
         }
 
         val save = Button(this)
-        save.text = "СОХРАНИТЬ ФИГУРУ"; save.setTextColor(Color.BLACK); save.background = ui.bg(ui.G, ui.G, 20)
+        save.text = "СОХРАНИТЬ ФИГУРУ"; save.setTextColor(ui.ON); save.background = ui.bg(ui.G, ui.G, 20)
         save.setOnClickListener {
             val m = ev.mask()
             if (m == null) ui.toast("Фигура пустая")

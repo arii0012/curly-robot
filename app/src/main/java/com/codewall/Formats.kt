@@ -178,10 +178,11 @@ object Formats {
             if (la.length() > Widgets.MAX) throw Invalid("слишком много виджетов")
             for (k in 0 until la.length()) {
                 val it = la.optJSONObject(k) ?: throw Invalid("виджет повреждён")
-                onlyKeys(it, setOf("t", "s", "c", "z", "x", "y", "a", "tx"))
-                num(it, "t", 0.0, 5.0); num(it, "s", 0.0, 3.0); num(it, "c", Int.MIN_VALUE.toDouble(), Int.MAX_VALUE.toDouble())
+                onlyKeys(it, setOf("t", "s", "c", "z", "x", "y", "a", "tx", "f", "o", "pl", "r", "g"))
+                num(it, "t", 0.0, 10.0); num(it, "s", 0.0, 4.0); num(it, "c", Int.MIN_VALUE.toDouble(), Int.MAX_VALUE.toDouble())
                 num(it, "z", 0.4, 3.0); num(it, "x", 0.0, 1.0); num(it, "y", 0.0, 1.0); num(it, "a", 0.0, 4.0)
-                if (it.has("tx")) { if (it.opt("tx") !is String) throw Invalid("текст виджета повреждён"); clean(it.getString("tx"), 24) }
+                num(it, "f", 0.0, 4.0); num(it, "o", 0.2, 1.0); num(it, "pl", 0.0, 2.0); num(it, "r", -90.0, 90.0); bool(it, "g")
+                if (it.has("tx")) { if (it.opt("tx") !is String) throw Invalid("текст виджета повреждён"); clean(it.getString("tx"), 40) }
             }
             widgets = w
         }
@@ -261,7 +262,7 @@ object Formats {
             val la = w.getJSONArray("list"); val out = JSONArray()
             for (k in 0 until la.length()) {
                 val wd = Widgets.fromJson(la.getJSONObject(k))
-                wd.text = clean(wd.text, 24)
+                wd.text = clean(wd.text, 40)
                 out.put(Widgets.toJson(wd))
             }
             p.wJson = out.toString()
