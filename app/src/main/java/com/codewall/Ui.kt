@@ -145,6 +145,21 @@ class Ui(private val a: Activity) {
         c.addView(hs, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
     }
 
+    /** Маленький переключатель-«таблетка» для полосы быстрых настроек. */
+    fun pill(row: LinearLayout, label: String, v0: Boolean, onChange: (Boolean) -> Unit) {
+        val tv = TextView(a)
+        var on = v0
+        fun paintIt() {
+            tv.background = bg(if (on) Skin.chipOn() else PANEL, if (on) G else LINE, 20)
+            tv.setTextColor(if (on) TXT else DIM)
+        }
+        tv.text = label; tv.textSize = 13f; tv.gravity = Gravity.CENTER
+        tv.setPadding(dp(14), 0, dp(14), 0)
+        paintIt()
+        tv.setOnClickListener { hap(tv); on = !on; paintIt(); onChange(on) }
+        row.addView(tv, LinearLayout.LayoutParams(-2, dp(36)).apply { marginEnd = dp(6) })
+    }
+
     fun swatches(c: LinearLayout, colors: IntArray, sel: Int, onSel: (Int) -> Unit) {
         val row = LinearLayout(a)
         val views = ArrayList<View>()

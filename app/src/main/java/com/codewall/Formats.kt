@@ -14,7 +14,7 @@ import java.io.ByteArrayOutputStream
 object Formats {
     const val MAX = 262144
     val CATEGORIES = listOf("Минимализм", "Киберпанк", "Игры", "Аниме", "Животные", "Природа", "Космос", "Разное")
-    val SCENES = listOf("Код-фигура", "Чёрная дыра", "Подарок", "Сердце из слов")
+    val SCENES = listOf("Код-фигура", "Чёрная дыра", "Подарок", "Сердце из слов", "Планета", "Галактика", "Матрица")
 
     class Invalid(m: String) : Exception(m)
     class Poa(val name: String, val author: String, val category: String, val desc: String, val shapeName: String?,
@@ -178,11 +178,11 @@ object Formats {
             if (la.length() > Widgets.MAX) throw Invalid("слишком много виджетов")
             for (k in 0 until la.length()) {
                 val it = la.optJSONObject(k) ?: throw Invalid("виджет повреждён")
-                onlyKeys(it, setOf("t", "s", "c", "z", "x", "y", "a", "tx", "f", "o", "pl", "r", "g"))
-                num(it, "t", 0.0, 10.0); num(it, "s", 0.0, 4.0); num(it, "c", Int.MIN_VALUE.toDouble(), Int.MAX_VALUE.toDouble())
-                num(it, "z", 0.4, 3.0); num(it, "x", 0.0, 1.0); num(it, "y", 0.0, 1.0); num(it, "a", 0.0, 4.0)
-                num(it, "f", 0.0, 4.0); num(it, "o", 0.2, 1.0); num(it, "pl", 0.0, 2.0); num(it, "r", -90.0, 90.0); bool(it, "g")
-                if (it.has("tx")) { if (it.opt("tx") !is String) throw Invalid("текст виджета повреждён"); clean(it.getString("tx"), 40) }
+                onlyKeys(it, setOf("t", "s", "c", "z", "x", "y", "a", "tx", "f", "o", "pl", "r", "g", "fx", "c2"))
+                num(it, "t", 0.0, 12.0); num(it, "s", 0.0, 4.0); num(it, "c", Int.MIN_VALUE.toDouble(), Int.MAX_VALUE.toDouble())
+                num(it, "z", 0.4, 3.0); num(it, "x", 0.0, 1.0); num(it, "y", 0.0, 1.0); num(it, "a", 0.0, 8.0)
+                num(it, "f", 0.0, 4.0); num(it, "o", 0.2, 1.0); num(it, "pl", 0.0, 2.0); num(it, "r", -90.0, 90.0); bool(it, "g"); num(it, "fx", 0.0, 4.0); num(it, "c2", Int.MIN_VALUE.toDouble(), Int.MAX_VALUE.toDouble())
+                if (it.has("tx")) { if (it.opt("tx") !is String) throw Invalid("текст виджета повреждён"); clean(it.getString("tx"), 80) }
             }
             widgets = w
         }
@@ -190,7 +190,7 @@ object Formats {
         if (o.has("scene")) {
             val sc = o.optJSONObject("scene") ?: throw Invalid("поле «scene» повреждено")
             onlyKeys(sc, setOf("type", "target", "density", "words", "message", "label"))
-            num(sc, "type", 0.0, 3.0); num(sc, "target", 0.0, 1.0); num(sc, "density", 0.4, 1.5)
+            num(sc, "type", 0.0, 6.0); num(sc, "target", 0.0, 1.0); num(sc, "density", 0.4, 1.5)
             if (sc.has("words")) {
                 val wa = sc.optJSONArray("words") ?: throw Invalid("слова повреждены")
                 if (wa.length() > 14) throw Invalid("слишком много слов")
@@ -209,7 +209,7 @@ object Formats {
     fun items(p: Poa): List<Pair<String, String>> {
         val l = ArrayList<Pair<String, String>>()
         val sc = p.scene
-        if (sc != null) l.add(Pair("scene", "Сцена: " + SCENES[sc.optInt("type", 0).coerceIn(0, 3)]))
+        if (sc != null) l.add(Pair("scene", "Сцена: " + SCENES[sc.optInt("type", 0).coerceIn(0, 6)]))
         if (p.shape != null) l.add(Pair("shape", "Фигура «" + p.shapeName + "»"))
         val s = p.settings
         if (s != null) {
@@ -226,7 +226,7 @@ object Formats {
     fun applyPoa(p: Prefs, ctx: Context, poa: Poa, keys: Set<String>, persist: Boolean = true) {
         val s = poa.settings; val w = poa.widgets; val sc = poa.scene; val sh = poa.shape
         if (sc != null && "scene" in keys) {
-            p.scene = sc.optInt("type", 0).coerceIn(0, 3); p.target = sc.optInt("target", 0).coerceIn(0, 1)
+            p.scene = sc.optInt("type", 0).coerceIn(0, 6); p.target = sc.optInt("target", 0).coerceIn(0, 1)
             p.density = sc.optDouble("density", 1.0).toFloat().coerceIn(0.4f, 1.5f)
             val wa = sc.optJSONArray("words")
             if (wa != null) { val l = ArrayList<String>(); for (k in 0 until wa.length()) l.add(clean(wa.getString(k), 18)); p.words = l.filter { it.isNotEmpty() }.joinToString(",") }
@@ -262,7 +262,7 @@ object Formats {
             val la = w.getJSONArray("list"); val out = JSONArray()
             for (k in 0 until la.length()) {
                 val wd = Widgets.fromJson(la.getJSONObject(k))
-                wd.text = clean(wd.text, 40)
+                wd.text = clean(wd.text, 80)
                 out.put(Widgets.toJson(wd))
             }
             p.wJson = out.toString()

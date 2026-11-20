@@ -43,6 +43,34 @@ class Prefs(ctx: Context, name: String = "cfg") {
     var saver: Boolean get() = sb("saver", true); set(v) = pb("saver", v)
     var author: String get() = ss("author", "аноним"); set(v) = ps("author", v)
     var stamp: Long get() = sp.getLong("stamp", 0); set(v) { sp.edit().putLong("stamp", v).apply() }
+    // парные обои: блокировка -> рабочий стол
+    var pair: Boolean get() = sb("pair", false); set(v) = pb("pair", v)
+    var lockScene: Int get() = si("lockScene", -1); set(v) = pi("lockScene", v)
+    var lockScale: Float get() = sf("lockScale", 0.5f); set(v) = pf("lockScale", v)
+    var lockX: Float get() = sf("lockX", 0.5f); set(v) = pf("lockX", v)
+    var lockY: Float get() = sf("lockY", 0.36f); set(v) = pf("lockY", v)
+    var lockBright: Float get() = sf("lockBright", 1f); set(v) = pf("lockBright", v)
+    var lockSpeed: Float get() = sf("lockSpeed", 1.5f); set(v) = pf("lockSpeed", v)
+    var lockWidgets: Boolean get() = sb("lockWidgets", true); set(v) = pb("lockWidgets", v)
+    var pairDur: Float get() = sf("pairDur", 1.3f); set(v) = pf("pairDur", v)
+    var pairEase: Int get() = si("pairEase", 1); set(v) = pi("pairEase", v)
+    // тонкие настройки сцен
+    var planetStyle: Int get() = si("planetStyle", 0); set(v) = pi("planetStyle", v)
+    var ring: Boolean get() = sb("ring", true); set(v) = pb("ring", v)
+    var codeText: String get() = ss("codeText", ""); set(v) = ps("codeText", v)
+    var holeTilt: Float get() = sf("holeTilt", 0.42f); set(v) = pf("holeTilt", v)
+    var holeRoll: Float get() = sf("holeRoll", -0.75f); set(v) = pf("holeRoll", v)
+    var holeRings: Int get() = si("holeRings", 18); set(v) = pi("holeRings", v)
+    var giftLoop: Float get() = sf("giftLoop", 14f); set(v) = pf("giftLoop", v)
+    var beat: Float get() = sf("beat", 1f); set(v) = pf("beat", v)
+    var heartSpin: Float get() = sf("heartSpin", 1f); set(v) = pf("heartSpin", v)
+    var giftShape: String get() = ss("giftShape", "b:2"); set(v) = ps("giftShape", v)
+    var heartShape: Int get() = si("heartShape", 0); set(v) = pi("heartShape", v)
+    var galVar: Int get() = si("galVar", 0); set(v) = pi("galVar", v)
+    var mxVar: Int get() = si("mxVar", 0); set(v) = pi("mxVar", v)
+    var moon: Boolean get() = sb("moon", true); set(v) = pb("moon", v)
+    var static: Boolean get() = sb("static", false); set(v) = pb("static", v)
+    var staticT: Float get() = sf("staticT", 6f); set(v) = pf("staticT", v)
     // оформление приложения
     var skin: Int get() = si("skin", 0); set(v) = pi("skin", v)
     var accentCustom: Int get() = si("accentCustom", 0); set(v) = pi("accentCustom", v)
@@ -91,8 +119,8 @@ class Prefs(ctx: Context, name: String = "cfg") {
             0xFFFFD84D.toInt(), 0xFFA3FF3D.toInt(), 0xFF00E5B0.toInt(), 0xFF4D7CFF.toInt(),
             0xFFE040FB.toInt(), 0xFFFF8FC7.toInt(), 0xFFB0B8C0.toInt(), 0xFF8B5E3C.toInt()
         )
-        val SKIP = setOf("backup", "token", "refresh", "uid", "email", "author", "shuffleAt", "shuffleIdx")
+        val SKIP = setOf("backup", "author", "shuffleAt", "shuffleIdx")
         val PRESET_SKIP = SKIP + setOf("skin", "accentCustom", "corners", "skinWithTheme", "shuffle")
-        val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt")
+        val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt", "planetStyle", "ring", "codeText", "holeRings", "giftShape", "heartShape", "galVar", "mxVar", "moon")
     }
 }

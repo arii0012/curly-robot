@@ -80,27 +80,31 @@ object Gallery {
         }.start()
     }
 
-    /** Четыре сцены с миниатюрами. */
+    /** Сцены с миниатюрами, по две в ряд. */
     fun scenes(a: Activity, ui: Ui, parent: LinearLayout, p: Prefs, onPick: () -> Unit) {
         val views = HashMap<Int, ImageView>()
-        for (r in 0..1) {
+        val n = Formats.SCENES.size
+        var i = 0
+        while (i < n) {
             val row = LinearLayout(a)
             for (k in 0..1) {
-                val s = r * 2 + k
+                val s = i + k
+                if (s >= n) { row.addView(android.view.View(a), LinearLayout.LayoutParams(0, 1, 1f)); continue }
                 val (box, iv, _) = cell(a, ui, Formats.SCENES[s], "", p.scene == s)
                 views[s] = iv
                 box.setOnClickListener { ui.hap(box); p.scene = s; onPick() }
                 row.addView(box, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(8); bottomMargin = ui.dp(8) })
             }
             parent.addView(row)
+            i += 2
         }
         Thread {
-            for (s in 0..3) {
+            for (s in 0 until n) {
                 if (a.isFinishing) return@Thread
                 try {
                     val bmp = Thumbs.render(a, "s:$s", 200, 360, Thumbs.timeFor(s)) { tp ->
                         tp.scene = s
-                        tp.colorInt = when (s) { 1 -> 0xFF3DD6FF.toInt(); 2 -> 0xFFFF5DA8.toInt(); 3 -> 0xFFFF2D6F.toInt(); else -> 0xFF4DFF88.toInt() }
+                        tp.colorInt = when (s) { 1 -> 0xFF3DD6FF.toInt(); 2 -> 0xFFFF5DA8.toInt(); 3 -> 0xFFFF2D6F.toInt(); 4 -> 0xFF3DD6FF.toInt(); 5 -> 0xFFB07CFF.toInt(); else -> 0xFF4DFF88.toInt() }
                     }
                     a.runOnUiThread { views[s]?.setImageBitmap(bmp) }
                 } catch (e: Exception) { }

@@ -19,7 +19,8 @@ class Mask(val rows: Int, val on: BooleanArray) {
 object Shapes {
     const val COLS = 88
     val NAMES = listOf("Капюшон", "Шар", "Сердце", "Звезда", "Череп", "Корона", "Молния", "Луна", "Алмаз",
-        "Кошка", "Призрак", "Глаз", "Огонь", "Капля", "Облако", "Планета", "Курсор")
+        "Кошка", "Призрак", "Глаз", "Огонь", "Капля", "Облако", "Планета", "Курсор",
+        "Ракета", "Прицел", "Граната", "Геймпад", "Щит", "Наушники")
 
     fun rowsFor(w: Int, h: Int) = max(8, (COLS * h.toFloat() / w * 0.75f).roundToInt()).coerceAtMost(150)
 
@@ -37,6 +38,89 @@ object Shapes {
             f != invert
         }
         return Pair(on, rows)
+    }
+
+
+    /** Умное превращение фото в фигуру: 3 способа выделения, сглаживание, заливка дыр, удаление мусора. */
+    fun analyze(src: Bitmap, method: Int, thr: Int, invert: Boolean, smooth: Int, fill: Boolean, despeckle: Int): Pair<BooleanArray, Int> {
+        val rows = rowsFor(src.width, src.height)
+        val b = Bitmap.createScaledBitmap(src, COLS, rows, true)
+        val px = IntArray(COLS * rows)
+        b.getPixels(px, 0, COLS, 0, 0, COLS, rows)
+        val n = px.size
+        val hasAlpha = px.any { Color.alpha(it) < 128 }
+        var on = BooleanArray(n)
+        if (hasAlpha) {
+            for (i in 0 until n) on[i] = Color.alpha(px[i]) >= 128
+        } else if (method == 0) {
+            var sr = 0; var sg = 0; var sb = 0; var cnt = 0
+            for (x in 0 until COLS) for (y in intArrayOf(0, rows - 1)) { val q = px[y * COLS + x]; sr += Color.red(q); sg += Color.green(q); sb += Color.blue(q); cnt++ }
+            for (y in 0 until rows) for (x in intArrayOf(0, COLS - 1)) { val q = px[y * COLS + x]; sr += Color.red(q); sg += Color.green(q); sb += Color.blue(q); cnt++ }
+            val br = sr / cnt; val bgc = sg / cnt; val bb = sb / cnt
+            for (i in 0 until n) { val q = px[i]; on[i] = abs(Color.red(q) - br) + abs(Color.green(q) - bgc) + abs(Color.blue(q) - bb) > thr }
+        } else {
+            val lum = IntArray(n) { (Color.red(px[it]) * 30 + Color.green(px[it]) * 59 + Color.blue(px[it]) * 11) / 100 }
+            if (method == 1) {
+                for (i in 0 until n) on[i] = lum[i] > thr
+            } else {
+                for (y in 1 until rows - 1) for (x in 1 until COLS - 1) {
+                    val i = y * COLS + x
+                    on[i] = abs(lum[i + 1] - lum[i - 1]) + abs(lum[i + COLS] - lum[i - COLS]) > thr / 2
+                }
+            }
+        }
+        if (invert) for (i in 0 until n) on[i] = !on[i]
+        repeat(smooth) { on = majority(on, rows) }
+        if (fill) on = fillHoles(on, rows)
+        if (despeckle > 0) on = despeckle(on, rows, despeckle * 3)
+        return Pair(on, rows)
+    }
+
+    private fun majority(on: BooleanArray, rows: Int): BooleanArray {
+        val out = BooleanArray(on.size)
+        for (y in 0 until rows) for (x in 0 until COLS) {
+            var c = 0
+            for (dy in -1..1) for (dx in -1..1) {
+                val xx = x + dx; val yy = y + dy
+                if (xx in 0 until COLS && yy in 0 until rows && on[yy * COLS + xx]) c++
+            }
+            out[y * COLS + x] = c >= 5
+        }
+        return out
+    }
+
+    private fun fillHoles(on: BooleanArray, rows: Int): BooleanArray {
+        val seen = BooleanArray(on.size); val q = IntArray(on.size)
+        var h = 0; var t = 0
+        fun push(i: Int) { if (!on[i] && !seen[i]) { seen[i] = true; q[t++] = i } }
+        for (x in 0 until COLS) { push(x); push((rows - 1) * COLS + x) }
+        for (y in 0 until rows) { push(y * COLS); push(y * COLS + COLS - 1) }
+        while (h < t) {
+            val i = q[h++]; val x = i % COLS; val y = i / COLS
+            if (x > 0) push(i - 1)
+            if (x < COLS - 1) push(i + 1)
+            if (y > 0) push(i - COLS)
+            if (y < rows - 1) push(i + COLS)
+        }
+        return BooleanArray(on.size) { on[it] || !seen[it] }
+    }
+
+    private fun despeckle(on: BooleanArray, rows: Int, minSize: Int): BooleanArray {
+        val out = on.copyOf(); val seen = BooleanArray(on.size); val q = IntArray(on.size)
+        for (s in on.indices) {
+            if (!on[s] || seen[s]) continue
+            var h = 0; var t = 0
+            q[t++] = s; seen[s] = true
+            while (h < t) {
+                val i = q[h++]; val x = i % COLS; val y = i / COLS
+                if (x > 0 && on[i - 1] && !seen[i - 1]) { seen[i - 1] = true; q[t++] = i - 1 }
+                if (x < COLS - 1 && on[i + 1] && !seen[i + 1]) { seen[i + 1] = true; q[t++] = i + 1 }
+                if (y > 0 && on[i - COLS] && !seen[i - COLS]) { seen[i - COLS] = true; q[t++] = i - COLS }
+                if (y < rows - 1 && on[i + COLS] && !seen[i + COLS]) { seen[i + COLS] = true; q[t++] = i + COLS }
+            }
+            if (t < minSize) for (k in 0 until t) out[q[k]] = false
+        }
+        return out
     }
 
     fun depthMap(on: BooleanArray, rows: Int): FloatArray {
@@ -144,6 +228,46 @@ object Shapes {
                 c.drawOval(RectF(8f, 84f, 192f, 136f), rp); c.restore()
             }
             16 -> poly(p, 40f, 10f, 40f, 190f, 85f, 148f, 118f, 212f, 148f, 198f, 115f, 136f, 172f, 136f)
+            17 -> {
+                val body = Path(); body.moveTo(100f, 8f); body.cubicTo(152f, 50f, 152f, 120f, 142f, 160f); body.lineTo(58f, 160f)
+                body.cubicTo(48f, 120f, 48f, 50f, 100f, 8f); body.close(); c.drawPath(body, p)
+                poly(p, 60f, 118f, 22f, 172f, 60f, 160f); poly(p, 140f, 118f, 178f, 172f, 140f, 160f)
+                c.drawRect(80f, 160f, 120f, 176f, p); poly(p, 84f, 180f, 116f, 180f, 100f, 214f)
+                c.drawCircle(100f, 82f, 18f, clear); c.drawCircle(100f, 82f, 11f, p)
+            }
+            18 -> {
+                val rp = Paint(p); rp.style = Paint.Style.STROKE; rp.strokeWidth = 12f
+                c.drawCircle(100f, 110f, 68f, rp)
+                c.drawLine(100f, 8f, 100f, 62f, rp); c.drawLine(100f, 158f, 100f, 212f, rp)
+                c.drawLine(8f, 110f, 62f, 110f, rp); c.drawLine(138f, 110f, 192f, 110f, rp)
+                c.drawCircle(100f, 110f, 7f, p)
+            }
+            19 -> {
+                c.drawCircle(100f, 130f, 70f, p); c.drawRect(82f, 38f, 118f, 76f, p)
+                poly(p, 116f, 44f, 162f, 34f, 168f, 50f, 124f, 62f)
+                val rp = Paint(p); rp.style = Paint.Style.STROKE; rp.strokeWidth = 8f; c.drawCircle(66f, 40f, 18f, rp)
+                c.drawRect(30f, 104f, 170f, 110f, clear); c.drawRect(30f, 130f, 170f, 136f, clear); c.drawRect(30f, 156f, 170f, 162f, clear)
+                c.drawRect(97f, 80f, 103f, 200f, clear)
+            }
+            20 -> {
+                c.drawRoundRect(RectF(14f, 64f, 186f, 150f), 44f, 44f, p)
+                c.drawCircle(52f, 148f, 34f, p); c.drawCircle(148f, 148f, 34f, p)
+                c.drawRect(38f, 104f, 66f, 114f, clear); c.drawRect(47f, 95f, 57f, 123f, clear)
+                c.drawCircle(148f, 94f, 8f, clear); c.drawCircle(166f, 108f, 8f, clear)
+                c.drawCircle(148f, 122f, 8f, clear); c.drawCircle(130f, 108f, 8f, clear)
+            }
+            21 -> {
+                val sh = Path(); sh.moveTo(100f, 10f); sh.lineTo(182f, 40f); sh.lineTo(174f, 122f)
+                sh.cubicTo(166f, 162f, 132f, 192f, 100f, 212f); sh.cubicTo(68f, 192f, 34f, 162f, 26f, 122f)
+                sh.lineTo(18f, 40f); sh.close(); c.drawPath(sh, p)
+                c.drawRect(92f, 56f, 108f, 160f, clear); c.drawRect(58f, 92f, 142f, 108f, clear)
+            }
+            22 -> {
+                val rp = Paint(p); rp.style = Paint.Style.STROKE; rp.strokeWidth = 16f
+                c.drawArc(RectF(28f, 20f, 172f, 170f), 180f, 180f, false, rp)
+                c.drawRoundRect(RectF(14f, 100f, 58f, 176f), 18f, 18f, p); c.drawRoundRect(RectF(142f, 100f, 186f, 176f), 18f, 18f, p)
+                c.drawRect(22f, 112f, 30f, 164f, clear)
+            }
             else -> {
                 c.drawOval(RectF(15f, 135f, 185f, 340f), p); c.drawOval(RectF(48f, 16f, 152f, 160f), p)
                 c.drawOval(RectF(76f, 70f, 124f, 136f), clear)

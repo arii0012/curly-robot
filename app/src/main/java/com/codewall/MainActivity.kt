@@ -22,7 +22,6 @@ class MainActivity : Activity() {
     private lateinit var r: Renderer
     private lateinit var ui: Ui
     private lateinit var frame: FrameLayout
-    private lateinit var nav: LinearLayout
     private lateinit var content: LinearLayout
     private val navViews = ArrayList<TextView>()
     private var pv: PreviewView? = null
@@ -31,7 +30,8 @@ class MainActivity : Activity() {
     private var tsub = 0
     private var wsub = 0
     private var editing = -1
-    private var target = 0
+    private var dest = 0
+    private var started = false
     private var pendingBytes: ByteArray? = null
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, k -> if (k in Prefs.RELOAD_KEYS) r.reload() }
 
@@ -46,9 +46,26 @@ class MainActivity : Activity() {
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(ui.BG)
+
+        // полоса быстрых настроек: всегда под рукой
+        val strip = HorizontalScrollView(this)
+        strip.isHorizontalScrollBarEnabled = false
+        val srow = LinearLayout(this)
+        srow.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(2))
+        ui.pill(srow, "◉ Рябь", p.touch) { v -> p.touch = v }
+        ui.pill(srow, "↔ Параллакс", p.parallax) { v -> p.parallax = v }
+        ui.pill(srow, "✦ Свечение", p.glow) { v -> p.glow = v }
+        ui.pill(srow, "🌈 Радуга", p.rainbow) { v -> p.rainbow = v }
+        ui.pill(srow, "🌙 Ночь", p.night) { v -> p.night = v }
+        ui.pill(srow, "🔋 Эко", p.saver) { v -> p.saver = v }
+        ui.pill(srow, "⏸ Статика", p.static) { v -> p.static = v }
+        ui.pill(srow, "🔗 Пара", p.pair) { v -> p.pair = v; r.setLocked(false, false) }
+        strip.addView(srow)
+        root.addView(strip, LinearLayout.LayoutParams(-1, -2))
+
         frame = FrameLayout(this)
         root.addView(frame, LinearLayout.LayoutParams(-1, 0, 1f))
-        nav = LinearLayout(this)
+        val nav = LinearLayout(this)
         nav.setBackgroundColor(ui.PANEL)
         root.addView(nav, LinearLayout.LayoutParams(-1, ui.dp(60)))
         val items = listOf("⌂" to "Главная", "✎" to "Дизайн", "▣" to "Виджеты", "◐" to "Темы", "☺" to "Профиль")
@@ -74,7 +91,8 @@ class MainActivity : Activity() {
         p.sp.registerOnSharedPreferenceChangeListener(listener)
         r.reload()
         pv?.invalidate()
-        if (tab == 4) showTab(4)
+        if (started && (tab == 0)) showTab(0)
+        started = true
     }
 
     override fun onPause() {
@@ -84,6 +102,7 @@ class MainActivity : Activity() {
 
     private fun showTab(i: Int) {
         tab = i
+        r.setLocked(false, false)
         for (k in navViews.indices) navViews[k].setTextColor(if (k == i) ui.G else ui.DIM)
         frame.removeAllViews()
         val sv = ScrollView(this)
@@ -118,10 +137,17 @@ class MainActivity : Activity() {
     private fun pct(v: Float) = "" + (v * 100).toInt() + "%"
     private fun spacer(c: LinearLayout, h: Int) { c.addView(View(this), LinearLayout.LayoutParams(-1, ui.dp(h))) }
 
+    private fun isActive(): Boolean = try {
+        WallpaperManager.getInstance(this).wallpaperInfo?.packageName == packageName
+    } catch (e: Exception) { false }
+
     private fun installWallpaper() {
         val i = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
         i.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, ComponentName(this, CodeWallpaperService::class.java))
-        try { startActivity(i) } catch (e: Exception) { startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) }
+        try { startActivity(i) } catch (e: Exception) {
+            try { startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) }
+            catch (e2: Exception) { ui.toast("Открой: Настройки → Обои → Живые обои → PoiPaper") }
+        }
     }
 
     // ================= ГЛАВНАЯ =================
@@ -136,24 +162,25 @@ class MainActivity : Activity() {
         col.setPadding(ui.dp(12), 0, 0, 0)
         val t1 = TextView(this)
         t1.text = "PoiPaper"; t1.setTextColor(ui.TXT); t1.textSize = 22f; t1.typeface = Typeface.DEFAULT_BOLD
+        val act = isActive()
         val t2 = TextView(this)
-        t2.text = Formats.SCENES[p.scene]; t2.setTextColor(ui.DIM); t2.textSize = 12f
+        t2.text = if (act) "● Живые обои установлены" else "○ Ещё не установлены — нажми УСТАНОВИТЬ"
+        t2.setTextColor(if (act) ui.G else ui.DIM); t2.textSize = 12f
         col.addView(t1); col.addView(t2)
         head.addView(col)
         content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(10) })
-        previewCard(0.44f)
-        val r1 = LinearLayout(this)
-        ui.tile(r1, "✦", "УСТАНОВИТЬ", true) { installWallpaper() }
-        ui.tile(r1, "⤢", "РАЗМЕТКА", false) { startActivity(Intent(this, LayoutActivity::class.java)) }
-        content.addView(r1, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
-        val r2 = LinearLayout(this)
-        ui.tile(r2, "🎲", "УДИВИ МЕНЯ", false) { surprise() }
-        ui.tile(r2, "⇪", "ПОДЕЛИТЬСЯ", false) { exportPoa() }
-        content.addView(r2, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
-        val r3 = LinearLayout(this)
-        ui.tile(r3, "⬇", "СОХРАНИТЬ КАДР", false) { saveFrame() }
-        ui.tile(r3, "★", "МОИ СБОРКИ", false) { tsub = 1; showTab(3) }
-        content.addView(r3, LinearLayout.LayoutParams(-1, -2))
+        previewCard(0.40f)
+        val rows = listOf(
+            listOf(Triple("✦", "УСТАНОВИТЬ", true) to { installWallpaper() }, Triple("⤢", "РАЗМЕТКА", false) to { startActivity(Intent(this, LayoutActivity::class.java)) }),
+            listOf(Triple("🎲", "УДИВИ МЕНЯ", false) to { surprise() }, Triple("🔗", "ПАРНЫЕ ОБОИ", false) to { sub = 6; showTab(1) }),
+            listOf(Triple("🖼", "ОБЫЧНЫЕ ОБОИ", false) to { staticDialog() }, Triple("⬇", "СОХРАНИТЬ КАДР", false) to { saveFrame() }),
+            listOf(Triple("★", "МОИ СБОРКИ", false) to { tsub = 1; showTab(3) }, Triple("⇪", "ПОДЕЛИТЬСЯ", false) to { exportPoa() })
+        )
+        for (row in rows) {
+            val lr = LinearLayout(this)
+            for (cell in row) ui.tile(lr, cell.first.first, cell.first.second, cell.first.third, cell.second)
+            content.addView(lr, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+        }
     }
 
     private fun surprise() {
@@ -165,18 +192,42 @@ class MainActivity : Activity() {
         if (changed) recreate() else showTab(tab)
     }
 
+    private fun renderBitmap(locked: Boolean): Bitmap {
+        val dm = resources.displayMetrics
+        val bmp = Bitmap.createBitmap(dm.widthPixels, dm.heightPixels, Bitmap.Config.ARGB_8888)
+        val rr = Renderer(this, p)
+        rr.reload()
+        rr.setLocked(locked, false)
+        rr.render(Canvas(bmp), bmp.width.toFloat(), bmp.height.toFloat(), p.staticT)
+        return bmp
+    }
+
     private fun saveFrame() {
         ui.toast("Рисую кадр…")
         Thread {
-            val dm = resources.displayMetrics
-            val bmp = Bitmap.createBitmap(dm.widthPixels, dm.heightPixels, Bitmap.Config.ARGB_8888)
-            val rr = Renderer(this, p)
-            rr.reload()
-            rr.render(Canvas(bmp), bmp.width.toFloat(), bmp.height.toFloat(), 9.5f)
             val bo = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, bo)
+            renderBitmap(false).compress(Bitmap.CompressFormat.PNG, 100, bo)
             pendingBytes = bo.toByteArray()
             runOnUiThread { createDoc("poipaper.png", "image/png") }
+        }.start()
+    }
+
+    /** Обычные (не живые) обои из текущего вида. Для экрана блокировки берётся состояние «блокировка» парных обоев. */
+    private fun staticDialog() {
+        AlertDialog.Builder(this).setTitle("Поставить как обычные обои")
+            .setItems(arrayOf("Рабочий стол", "Экран блокировки", "Оба экрана")) { _, which -> setStatic(which) }.show()
+    }
+
+    private fun setStatic(which: Int) {
+        ui.toast("Рисую обои…")
+        Thread {
+            val ok = try {
+                val wm = WallpaperManager.getInstance(this)
+                if (which == 0 || which == 2) wm.setBitmap(renderBitmap(false), null, true, WallpaperManager.FLAG_SYSTEM)
+                if (which == 1 || which == 2) wm.setBitmap(renderBitmap(true), null, true, WallpaperManager.FLAG_LOCK)
+                true
+            } catch (e: Exception) { false }
+            runOnUiThread { ui.toast(if (ok) "Обои поставлены" else "Не удалось поставить обои") }
         }.start()
     }
 
@@ -184,14 +235,15 @@ class MainActivity : Activity() {
     private fun pageDesign() {
         previewCard(0.26f)
         val a = vbox()
-        ui.seg(content, listOf("Сцена", "Фигуры", "Цвет", "Движение", "Место", "Эффекты", "Батарея"), sub) { i -> sub = i; fillDesign(a) }
+        ui.seg(content, listOf("Сцена", "Фигуры", "Цвет", "Движение", "Место", "Эффекты", "Пара", "Тонко", "Батарея"), sub) { i -> sub = i; fillDesign(a) }
         content.addView(a)
         fillDesign(a)
     }
 
     private fun fillDesign(a: LinearLayout) {
         a.removeAllViews()
-        when (sub) { 0 -> dsScene(a); 1 -> dsShapes(a); 2 -> dsColor(a); 3 -> dsMotion(a); 4 -> dsPlace(a); 5 -> dsFx(a); else -> dsBattery(a) }
+        if (sub != 6) r.setLocked(false, false)
+        when (sub) { 0 -> dsScene(a); 1 -> dsFigures(a); 2 -> dsColor(a); 3 -> dsMotion(a); 4 -> dsPlace(a); 5 -> dsFx(a); 6 -> dsPair(a); 7 -> dsFine(a); else -> dsBattery(a) }
     }
 
     private fun dsScene(a: LinearLayout) {
@@ -200,10 +252,7 @@ class MainActivity : Activity() {
         ui.card(a, "", Formats.SCENES[p.scene]).let {
             ui.slider(it, "скорость", 0.3f, 2.5f, p.speed) { v -> p.speed = v }
             ui.slider(it, "плотность частиц", 0.4f, 1.5f, p.density) { v -> p.density = v }
-            if (p.scene == 2) {
-                ui.chips(it, listOf("Мишка", "Моя фигура"), p.target) { i -> p.target = i }
-                ui.field(it, "Надпись на сердце", p.label) { s -> p.label = s.take(14) }
-            }
+            if (p.scene == 2) ui.field(it, "Надпись на сердце мишки", p.label) { s -> p.label = s.take(14) }
             if (p.scene == 3) {
                 ui.field(it, "Слова через запятую", p.words) { s -> p.words = s.take(200) }
                 ui.field(it, "Письмо (печатается внизу)", p.message) { s -> p.message = s.take(120) }
@@ -211,29 +260,73 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun curId() = if (target == 1) p.shapeB else p.shapeA
+    // ----- Фигуры: у каждой сцены свои варианты -----
+    private fun curId() = when (dest) { 1 -> p.shapeB; 2 -> p.giftShape; else -> p.shapeA }
 
-    private fun setTarget(id: String) {
-        if (target == 1) p.shapeB = id else p.shapeA = id
+    private fun setId(id: String) {
+        when (dest) { 1 -> p.shapeB = id; 2 -> { p.giftShape = id; p.target = 1 }; else -> p.shapeA = id }
         p.stamp = System.currentTimeMillis()
     }
 
-    private fun dsShapes(a: LinearLayout) {
-        ui.card(a, "", "Фигура").let {
-            ui.chips(it, listOf("Фигура 1", "Фигура 2"), target) { i -> target = i; fillDesign(a) }
-            if (target == 1 && p.shapeB.isNotEmpty()) ui.btn(it, "УБРАТЬ ФИГУРУ 2", false) { p.shapeB = ""; fillDesign(a) }
-            val names = Shapes.NAMES
+    private fun variantCard(a: LinearLayout, title: String, labels: List<String>, cur: Int, onPick: (Int) -> Unit, extra: ((LinearLayout) -> Unit)? = null) {
+        ui.card(a, "", title).let { c ->
             var s = 0
-            while (s < names.size) {
-                val part = names.subList(s, minOf(s + 4, names.size))
-                val cur = curId()
-                var sel = -1
-                for (k in part.indices) if (cur == "b:" + (s + k)) sel = k
+            while (s < labels.size) {
+                val part = labels.subList(s, minOf(s + 4, labels.size))
                 val base = s
-                ui.chips(it, part, sel) { k -> setTarget("b:" + (base + k)); fillDesign(a) }
+                ui.chips(c, part, if (cur in base until base + part.size) cur - base else -1) { k -> onPick(base + k); fillDesign(a) }
                 s += 4
             }
+            if (extra != null) extra(c)
         }
+    }
+
+    private fun dsFigures(a: LinearLayout) {
+        when (p.scene) {
+            0, 2 -> shapeUi(a)
+            1 -> {
+                val presets = listOf(Triple(0.42f, -0.75f, 18), Triple(0.25f, -0.3f, 26), Triple(0.12f, -0.1f, 22), Triple(1.1f, 0f, 14), Triple(0.6f, 1.2f, 10))
+                var cur = -1
+                for (i in presets.indices) if (presets[i].first == p.holeTilt && presets[i].second == p.holeRoll && presets[i].third == p.holeRings) cur = i
+                variantCard(a, "Вид чёрной дыры", listOf("Классика", "Квазар", "Ребром", "Сверху", "Вихрь"), cur, { i ->
+                    p.holeTilt = presets[i].first; p.holeRoll = presets[i].second; p.holeRings = presets[i].third
+                })
+            }
+            3 -> variantCard(a, "Форма из слов", listOf("Сердце", "Шар", "Тор", "Спираль", "Звезда"), p.heartShape, { i -> p.heartShape = i })
+            4 -> variantCard(a, "Планета", listOf("Океан", "Газовый", "Лава", "Лёд", "Сатурн", "Марс", "Луна", "Мой цвет"), p.planetStyle, { i ->
+                p.planetStyle = i; if (i == 4) p.ring = true
+            }) { c ->
+                ui.toggle(c, "Кольцо", p.ring) { v -> p.ring = v }
+                ui.toggle(c, "Луна", p.moon) { v -> p.moon = v }
+            }
+            5 -> variantCard(a, "Галактика", listOf("Спираль", "4 рукава", "Эллипс", "Кольцо", "Вихрь"), p.galVar, { i -> p.galVar = i })
+            else -> variantCard(a, "Символы дождя", listOf("Катакана", "Двоичный", "Латиница", "Сердечки", "Код"), p.mxVar, { i -> p.mxVar = i })
+        }
+    }
+
+    private fun shapeUi(a: LinearLayout) {
+        dest = if (p.scene == 2) 2 else if (dest == 2) 0 else dest
+        ui.card(a, "", if (p.scene == 2) "Что появится из коробки" else "Фигура").let {
+            if (p.scene == 2) ui.chips(it, listOf("Мишка", "Фигура из списка"), p.target) { i -> p.target = i; fillDesign(a) }
+            else {
+                ui.chips(it, listOf("Фигура 1", "Фигура 2"), dest) { i -> dest = i; fillDesign(a) }
+                if (dest == 1 && p.shapeB.isNotEmpty()) ui.btn(it, "УБРАТЬ ФИГУРУ 2", false) { p.shapeB = ""; fillDesign(a) }
+            }
+            if (p.scene == 0 || p.target == 1) {
+                val names = Shapes.NAMES
+                var s = 0
+                while (s < names.size) {
+                    val part = names.subList(s, minOf(s + 4, names.size))
+                    val cur = curId()
+                    var sel = -1
+                    for (k in part.indices) if (cur == "b:" + (s + k)) sel = k
+                    val base = s
+                    ui.chips(it, part, sel) { k -> setId("b:" + (base + k)); fillDesign(a) }
+                    s += 4
+                }
+            }
+        }
+        if (p.scene == 2 && p.target == 0) return
         ui.card(a, "", "Мои фигуры").let {
             for (f in Shapes.list(this)) {
                 val row = LinearLayout(this)
@@ -241,13 +334,14 @@ class MainActivity : Activity() {
                 val tv = TextView(this)
                 tv.text = (if (curId() == f.first) "● " else "○ ") + f.second
                 tv.setTextColor(if (curId() == f.first) ui.TXT else ui.DIM); tv.textSize = 15f
-                tv.setOnClickListener { setTarget(f.first); fillDesign(a) }
+                tv.setOnClickListener { setId(f.first); fillDesign(a) }
                 row.addView(tv, LinearLayout.LayoutParams(0, -2, 1f))
                 ui.small(row, "ЭКСПОРТ") { exportPoi(f.first, f.second) }
                 ui.small(row, "УДАЛИТЬ") {
                     Shapes.delete(this, f.first)
                     if (p.shapeA == f.first) p.shapeA = "b:0"
                     if (p.shapeB == f.first) p.shapeB = ""
+                    if (p.giftShape == f.first) p.giftShape = "b:2"
                     fillDesign(a)
                 }
                 it.addView(row, LinearLayout.LayoutParams(-1, ui.dp(44)))
@@ -258,7 +352,7 @@ class MainActivity : Activity() {
                 startActivityForResult(i, 1)
             }
             ui.btn(it, "ИЗ ТЕКСТА", false) {
-                ui.prompt("Текст фигуры", "до 14 символов", "POI") { t -> if (t.isNotEmpty()) { setTarget("t:" + t.take(14)); fillDesign(a) } }
+                ui.prompt("Текст фигуры", "до 14 символов", "POI") { t -> if (t.isNotEmpty()) { setId("t:" + t.take(14)); fillDesign(a) } }
             }
         }
     }
@@ -283,7 +377,7 @@ class MainActivity : Activity() {
                 ui.slider(it, "глубина 3D", 0f, 2f, p.depth) { v -> p.depth = v }
                 ui.slider(it, "толщина линий", 0.5f, 3f, p.lineW) { v -> p.lineW = v }
             }
-            ui.toggle(it, "Рябь при касании", p.touch) { v -> p.touch = v }
+            ui.toggle(it, "Рябь при касании и разблокировке", p.touch) { v -> p.touch = v }
             ui.toggle(it, "Параллакс при листании", p.parallax) { v -> p.parallax = v }
         }
     }
@@ -308,7 +402,74 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun sceneLabel(i: Int) = Formats.SCENES[i]
+
+    private fun dsPair(a: LinearLayout) {
+        ui.card(a, "", "Парные обои").let { c ->
+            ui.toggle(c, "Включить: блокировка → рабочий стол", p.pair) { v -> p.pair = v; r.setLocked(false, false) }
+            ui.btn(c, "ПЛАНЕТА ПРИБЛИЖАЕТСЯ (ГОТОВО)", true) {
+                Themes.apply(p, Themes.ALL.first { it.name == "Планета: приближение" }); fillDesign(a)
+            }
+            ui.btn(c, "ПОДАРОК → СЕРДЦЕ (ГОТОВО)", false) {
+                Themes.apply(p, Themes.ALL.first { it.name == "Сюрприз" }); fillDesign(a)
+            }
+        }
+        if (!p.pair) return
+        ui.card(a, "", "Показать в предпросмотре").let { c ->
+            ui.chips(c, listOf("Блокировка", "Рабочий стол", "▶ Переход"), -1) { i ->
+                when (i) { 0 -> r.setLocked(true, false); 1 -> r.setLocked(false, false); else -> { r.setLocked(true, false); r.setLocked(false, true) } }
+            }
+        }
+        ui.card(a, "", "Экран блокировки").let { c ->
+            val names = listOf("Та же") + (0 until Formats.SCENES.size).map { sceneLabel(it) }
+            var s = 0
+            while (s < names.size) {
+                val part = names.subList(s, minOf(s + 4, names.size))
+                val base = s
+                ui.chips(c, part, if ((p.lockScene + 1) in base until base + part.size) p.lockScene + 1 - base else -1) { k -> p.lockScene = base + k - 1; fillDesign(a) }
+                s += 4
+            }
+            ui.slider(c, "размер", 0.2f, 2f, p.lockScale) { v -> p.lockScale = v }
+            ui.slider(c, "по горизонтали", 0f, 1f, p.lockX, { v -> pct(v) }) { v -> p.lockX = v }
+            ui.slider(c, "по вертикали", 0f, 1f, p.lockY, { v -> pct(v) }) { v -> p.lockY = v }
+            ui.slider(c, "яркость", 0.2f, 1f, p.lockBright, { v -> pct(v) }) { v -> p.lockBright = v }
+            ui.slider(c, "скорость движения", 0f, 3f, p.lockSpeed) { v -> p.lockSpeed = v }
+            ui.toggle(c, "Показывать виджеты на блокировке", p.lockWidgets) { v -> p.lockWidgets = v }
+        }
+        ui.card(a, "", "Переход").let { c ->
+            ui.slider(c, "длительность", 0.3f, 3f, p.pairDur, { v -> "%.1f с".format(v) }) { v -> p.pairDur = v }
+            ui.chips(c, listOf("Плавно", "Быстро", "Пружина", "Сразу"), p.pairEase) { i -> p.pairEase = i }
+        }
+    }
+
+    private fun dsFine(a: LinearLayout) {
+        ui.card(a, "", "Тонкая настройка: " + Formats.SCENES[p.scene]).let { c ->
+            when (p.scene) {
+                0 -> ui.field(c, "Свой текст вместо кода", p.codeText) { s -> p.codeText = s.take(120) }
+                1 -> {
+                    ui.slider(c, "наклон диска", 0.05f, 1.4f, p.holeTilt, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeTilt = v }
+                    ui.slider(c, "поворот", -1.6f, 1.6f, p.holeRoll, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeRoll = v }
+                    ui.slider(c, "число колец", 6f, 30f, p.holeRings.toFloat(), { v -> "" + v.toInt() }) { v -> p.holeRings = v.toInt() }
+                }
+                2 -> ui.slider(c, "длина цикла", 8f, 30f, p.giftLoop, { v -> "" + v.toInt() + " с" }) { v -> p.giftLoop = v }
+                3 -> {
+                    ui.slider(c, "частота пульса", 0.5f, 2f, p.beat) { v -> p.beat = v }
+                    ui.slider(c, "скорость вращения", 0f, 3f, p.heartSpin) { v -> p.heartSpin = v }
+                }
+                4, 5 -> {
+                    ui.slider(c, "наклон", 0.05f, 1.4f, p.holeTilt, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeTilt = v }
+                    ui.slider(c, "поворот", -1.6f, 1.6f, p.holeRoll, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeRoll = v }
+                }
+                else -> ui.slider(c, "скорость падения", 0.2f, 3f, p.speed) { v -> p.speed = v }
+            }
+        }
+    }
+
     private fun dsBattery(a: LinearLayout) {
+        ui.card(a, "", "Статичные обои").let {
+            ui.toggle(it, "Не двигаются (один кадр)", p.static) { v -> p.static = v }
+            ui.slider(it, "какой кадр показать", 0f, 20f, p.staticT, { v -> "" + v.toInt() + " с" }) { v -> p.staticT = v }
+        }
         ui.card(a, "", "Плавность и экономия").let {
             val f = listOf(30, 45, 60, 90, 120)
             ui.chips(it, f.map { x -> "$x" }, f.indexOf(p.fps).coerceAtLeast(0)) { i -> p.fps = f[i] }
@@ -364,19 +525,31 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun twoRows(a: LinearLayout, labels: List<String>, cur: Int, onPick: (Int) -> Unit) {
+        var s = 0
+        while (s < labels.size) {
+            val part = labels.subList(s, minOf(s + 5, labels.size))
+            val base = s
+            ui.chips(a, part, if (cur in base until base + part.size) cur - base else -1) { k -> onPick(base + k) }
+            s += 5
+        }
+    }
+
     private fun fillWidget(a: LinearLayout, wl: MutableList<Wdg>, idx: Int) {
         a.removeAllViews()
         val w = wl[idx]
         fun save() { Widgets.save(p, wl) }
         when (wsub) {
             0 -> {
-                if (Widgets.STYLES[w.type].size > 1) ui.chips(a, Widgets.STYLES[w.type], w.style) { i -> w.style = i; save() }
-                ui.chips(a, Widgets.ANIMS, w.anim) { i -> w.anim = i; save() }
-                ui.chips(a, Widgets.FONTS, w.font) { i -> w.font = i; save() }
+                if (Widgets.STYLES[w.type].size > 1) twoRows(a, Widgets.STYLES[w.type], w.style) { i -> w.style = i; save(); fillWidget(a, wl, idx) }
+                twoRows(a, Widgets.ANIMS, w.anim) { i -> w.anim = i; save(); fillWidget(a, wl, idx) }
+                twoRows(a, Widgets.FONTS, w.font) { i -> w.font = i; save(); fillWidget(a, wl, idx) }
+                twoRows(a, Widgets.FX, w.fx) { i -> w.fx = i; save(); fillWidget(a, wl, idx) }
             }
             1 -> {
                 ui.swatches(a, Prefs.PALETTE, Prefs.PALETTE.indexOf(w.color)) { i -> w.color = Prefs.PALETTE[i]; save(); fillWidget(a, wl, idx) }
                 ui.swatches(a, Prefs.PALETTE2, Prefs.PALETTE2.indexOf(w.color)) { i -> w.color = Prefs.PALETTE2[i]; save(); fillWidget(a, wl, idx) }
+                if (w.fx == 3) ui.swatches(a, Prefs.PALETTE, Prefs.PALETTE.indexOf(w.color2)) { i -> w.color2 = Prefs.PALETTE[i]; save(); fillWidget(a, wl, idx) }
                 ui.slider(a, "прозрачность", 0.2f, 1f, w.op, { v -> pct(v) }) { v -> w.op = v; save() }
                 ui.toggle(a, "Свечение", w.glow) { v -> w.glow = v; save() }
                 ui.chips(a, Widgets.PLATES, w.plate) { i -> w.plate = i; save() }
@@ -386,7 +559,8 @@ class MainActivity : Activity() {
                 ui.slider(a, "поворот", -45f, 45f, w.rot, { v -> "" + v.toInt() + "°" }) { v -> w.rot = v; save() }
                 ui.slider(a, "по горизонтали", 0f, 1f, w.x, { v -> pct(v) }) { v -> w.x = v; save() }
                 ui.slider(a, "по вертикали", 0f, 1f, w.y, { v -> pct(v) }) { v -> w.y = v; save() }
-                if (w.type == 3) ui.field(a, "Текст", w.text) { s -> w.text = s.take(40); save() }
+                if (w.type == 3) ui.field(a, "Текст", w.text) { s -> w.text = s.take(80); save() }
+                if (w.type == 12) ui.field(a, "Бегущий текст", w.text) { s -> w.text = s.take(80); save() }
                 if (w.type == 7) {
                     val parts = w.text.split(';')
                     val date = parts[0]
@@ -529,7 +703,7 @@ class MainActivity : Activity() {
     }
 
     private fun exportPoa() {
-        ui.prompt("Название пака", "например: Неоновая чёрная дыра", "") { name ->
+        ui.prompt("Название пака", "например: Неоновая планета", "") { name ->
             if (name.isNotEmpty()) {
                 AlertDialog.Builder(this).setTitle("Категория").setItems(Formats.CATEGORIES.toTypedArray()) { _, w ->
                     pendingBytes = Formats.buildPoa(p, Shapes.nameOf(p.shapeA), Shapes.resolve(this, p.shapeA), name, p.author, Formats.CATEGORIES[w], "").toByteArray(Charsets.UTF_8)
@@ -546,7 +720,8 @@ class MainActivity : Activity() {
                 "poa" -> ui.showPoa(Formats.parsePoa(text), p) { r.reload(); showTab(tab) }
                 "poi" -> {
                     val sh = Formats.parsePoi(text)
-                    setTarget(Shapes.save(this, sh.first, sh.second))
+                    dest = 0
+                    setId(Shapes.save(this, sh.first, sh.second))
                     ui.toast("Фигура «" + sh.first + "» добавлена")
                     showTab(tab)
                 }
@@ -567,7 +742,7 @@ class MainActivity : Activity() {
                 val i = Intent(this, EditorActivity::class.java)
                 i.data = uri
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                i.putExtra("target", target)
+                i.putExtra("dest", dest)
                 startActivityForResult(i, 5)
             }
             2 -> importFile(uri)

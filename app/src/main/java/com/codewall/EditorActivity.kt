@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.media.ExifInterface
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
@@ -105,8 +106,13 @@ class EditorActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var p: Prefs
     private lateinit var ev: EditorView
+    private lateinit var list: LinearLayout
     private var src: Bitmap? = null
+    private var method = 0
     private var thr = 90
+    private var smooth = 1
+    private var despeckle = 2
+    private var fill = false
     private var inv = false
 
     private fun loadBitmap(uri: Uri): Bitmap? {
@@ -116,14 +122,47 @@ class EditorActivity : Activity() {
             var s = 1
             while (o.outWidth / s > 1024 || o.outHeight / s > 1024) s *= 2
             val opts = BitmapFactory.Options().apply { inSampleSize = s }
-            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+            var bmp = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
+            // поворот по EXIF: фото с телефона больше не «лежат на боку»
+            val orient = try {
+                contentResolver.openInputStream(uri)?.use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) } ?: 1
+            } catch (e: Exception) { 1 }
+            val deg = when (orient) { 6 -> 90f; 3 -> 180f; 8 -> 270f; else -> 0f }
+            if (deg != 0f) {
+                val m = Matrix(); m.postRotate(deg)
+                bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+            }
+            bmp
         } catch (e: Exception) { null }
     }
 
     private fun regen() {
         val s = src ?: return
-        val r = Shapes.bitmapToOn(s, inv, thr)
+        val r = Shapes.analyze(s, method, thr, inv, smooth, fill, despeckle)
         ev.setData(r.first, r.second, Bitmap.createScaledBitmap(s, Shapes.COLS, r.second, true))
+    }
+
+    private fun controls() {
+        list.removeAllViews()
+        ui.card(list, "", "Силуэт из фото").let {
+            ui.chips(it, listOf("Фон по краю", "Яркость", "Контур"), method) { i ->
+                method = i; thr = when (i) { 0 -> 90; 1 -> 128; else -> 60 }; controls(); regen()
+            }
+            ui.slider(it, "чувствительность", 5f, 255f, thr.toFloat(), { v -> "" + v.toInt() }) { v -> thr = v.toInt(); regen() }
+            ui.slider(it, "сглаживание", 0f, 3f, smooth.toFloat(), { v -> "" + v.toInt() }) { v -> smooth = v.toInt(); regen() }
+            ui.slider(it, "убрать мусор", 0f, 10f, despeckle.toFloat(), { v -> "" + v.toInt() }) { v -> despeckle = v.toInt(); regen() }
+            ui.toggle(it, "Заполнить дыры внутри", fill) { v -> fill = v; regen() }
+            ui.toggle(it, "Инвертировать", inv) { v -> inv = v; regen() }
+        }
+        ui.card(list, "", "Рисование").let {
+            ui.chips(it, listOf("Кисть +", "Кисть −", "Область +", "Область −"), ev.tool) { i -> ev.tool = i }
+            ui.slider(it, "размер кисти", 1f, 10f, ev.brush.toFloat(), { v -> "" + v.toInt() }) { v -> ev.brush = v.toInt().coerceAtLeast(1) }
+        }
+        ui.card(list, "", "Правки").let {
+            ui.btn(it, "ОТМЕНИТЬ ШАГ", false) { ev.undo() }
+            ui.btn(it, "ВСЁ УБРАТЬ", false) { ev.fillAll(false) }
+            ui.btn(it, "ВСЁ ЗАЛИТЬ", false) { ev.fillAll(true) }
+        }
     }
 
     override fun onCreate(b: Bundle?) {
@@ -145,38 +184,22 @@ class EditorActivity : Activity() {
         t1.text = "РЕДАКТОР ФИГУРЫ"; t1.setTextColor(ui.G); t1.textSize = 12f; t1.typeface = Typeface.MONOSPACE
         page.addView(t1)
         val t2 = TextView(this)
-        t2.text = "Фото превращено в силуэт. Дорисуй (+) или сотри лишнее (−)."
+        t2.text = "Подбери способ и чувствительность, потом дорисуй (+) или сотри (−)."
         t2.setTextColor(ui.DIM); t2.textSize = 13f; t2.setPadding(0, ui.dp(2), 0, ui.dp(8))
         page.addView(t2)
 
         ev = EditorView(this)
         val g = GradientDrawable(); g.setColor(Color.BLACK); g.setStroke(ui.dp(1), ui.LINE); g.cornerRadius = ui.dp(20).toFloat()
         ev.background = g; ev.clipToOutline = true; ev.outlineProvider = ViewOutlineProvider.BACKGROUND
-        val eh = (resources.displayMetrics.heightPixels * 0.42f).toInt()
+        val eh = (resources.displayMetrics.heightPixels * 0.40f).toInt()
         page.addView(ev, LinearLayout.LayoutParams(-1, eh).apply { bottomMargin = ui.dp(10) })
 
-        val list = LinearLayout(this)
+        list = LinearLayout(this)
         list.orientation = LinearLayout.VERTICAL
         val sv = ScrollView(this)
         sv.isVerticalScrollBarEnabled = false
         sv.addView(list)
         page.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        ui.card(list, "01 / ИНСТРУМЕНТ", "Выделение").let {
-            ui.chips(it, listOf("Кисть +", "Кисть −", "Область +", "Область −"), 0) { i -> ev.tool = i }
-            ui.slider(it, "размер кисти", 1f, 10f, 3f, { v -> "%.0f".format(v) }) { v -> ev.brush = v.toInt().coerceAtLeast(1) }
-            ui.note(it, "«Область» — протяни рамку, и всё внутри добавится или сотрётся.")
-        }
-        ui.card(list, "02 / АВТО-СИЛУЭТ", "Из фото").let {
-            ui.slider(it, "чувствительность", 10f, 250f, 90f, { v -> "%.0f".format(v) }) { v -> thr = v.toInt(); regen() }
-            ui.btn(it, "ИНВЕРТИРОВАТЬ ФОРМУ", false) { inv = !inv; regen() }
-            ui.note(it, "Изменение чувствительности или инверсия сбрасывает ручные правки.")
-        }
-        ui.card(list, "03 / ПРАВКИ", "Шаги").let {
-            ui.btn(it, "ОТМЕНИТЬ ШАГ", false) { ev.undo() }
-            ui.btn(it, "ВСЁ УБРАТЬ", false) { ev.fillAll(false) }
-            ui.btn(it, "ВСЁ ЗАЛИТЬ", false) { ev.fillAll(true) }
-        }
 
         val save = Button(this)
         save.text = "СОХРАНИТЬ ФИГУРУ"; save.setTextColor(ui.ON); save.background = ui.bg(ui.G, ui.G, 20)
@@ -185,7 +208,11 @@ class EditorActivity : Activity() {
             if (m == null) ui.toast("Фигура пустая")
             else ui.prompt("Название фигуры", "например: Мой логотип", "Моя фигура") { name ->
                 val id = Shapes.save(this, name.ifEmpty { "Фигура" }.take(24), m)
-                if (intent.getIntExtra("target", 0) == 1) p.shapeB = id else p.shapeA = id
+                when (intent.getIntExtra("dest", 0)) {
+                    2 -> { p.giftShape = id; p.target = 1 }
+                    1 -> p.shapeB = id
+                    else -> p.shapeA = id
+                }
                 p.stamp = System.currentTimeMillis()
                 setResult(RESULT_OK)
                 finish()
@@ -193,6 +220,7 @@ class EditorActivity : Activity() {
         }
         page.addView(save, LinearLayout.LayoutParams(-1, ui.dp(58)).apply { topMargin = ui.dp(10) })
         setContentView(page)
+        controls()
         regen()
     }
 }

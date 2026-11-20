@@ -1,4 +1,6 @@
 package com.codewall
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -21,27 +23,56 @@ class CodeWallpaperService : WallpaperService() {
         private val prefs = Prefs(this@CodeWallpaperService)
         private val renderer = Renderer(this@CodeWallpaperService, prefs)
         private val pm = this@CodeWallpaperService.getSystemService(Context.POWER_SERVICE) as PowerManager
+        private val km = this@CodeWallpaperService.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         private val t0 = SystemClock.uptimeMillis()
         private var visible = false
         private var shownAt = 0L
         private var lowBat = false
         private var lastBat = 0L
+        private var frozenT = -1f
+
+        private val rcv = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                when (i?.action) {
+                    Intent.ACTION_SCREEN_OFF -> renderer.setLocked(true, false)
+                    Intent.ACTION_USER_PRESENT -> {
+                        renderer.setLocked(false, true)
+                        if (prefs.touch) { val f = surfaceHolder.surfaceFrame; renderer.poke(f.width() / 2f, f.height() * 0.5f) }
+                        wake()
+                    }
+                }
+            }
+        }
 
         private val tick = object : Runnable {
             override fun run() {
-                draw()
-                if (!visible) return
                 val now = SystemClock.uptimeMillis()
                 if (now - lastBat > 15000) { lastBat = now; lowBat = lowBattery() }
+                val real = (now - t0) / 1000f
                 val saving = prefs.saver && (pm.isPowerSaveMode || lowBat)
-                var fps = prefs.fps
-                if (saving) fps = min(fps, 24)
                 var freeze = prefs.eco
                 if (saving && (freeze == 0 || freeze > 20)) freeze = 20
-                // экономия: через N секунд кадр замирает; касание будит
-                if (freeze > 0 && now - shownAt > freeze * 1000L) return
+                val expired = freeze > 0 && now - shownAt > freeze * 1000L
+                val frozen = prefs.static || expired
+                val tUse = if (prefs.static) prefs.staticT
+                    else if (expired) { if (frozenT < 0f) frozenT = real; frozenT }
+                    else { frozenT = -1f; real }
+                draw(tUse)
+                if (!visible) return
+                if (frozen && !renderer.busy()) {
+                    // кадр замер, но часы на виджетах продолжают идти
+                    if (renderer.needsClock()) h.postDelayed(this, renderer.clockStep())
+                    return
+                }
+                var fps = prefs.fps
+                if (saving) fps = min(fps, 24)
                 h.postDelayed(this, 1000L / fps.coerceIn(10, 144))
             }
+        }
+
+        private fun wake() {
+            shownAt = SystemClock.uptimeMillis()
+            if (visible) { h.removeCallbacks(tick); tick.run() }
         }
 
         private fun lowBattery(): Boolean {
@@ -56,21 +87,27 @@ class CodeWallpaperService : WallpaperService() {
             super.onCreate(sh)
             setTouchEventsEnabled(true)
             prefs.sp.registerOnSharedPreferenceChangeListener(this)
-            renderer.reload()
+            val f = IntentFilter()
+            f.addAction(Intent.ACTION_SCREEN_OFF); f.addAction(Intent.ACTION_USER_PRESENT)
+            try { this@CodeWallpaperService.registerReceiver(rcv, f) } catch (e: Exception) { }
+            try { renderer.setLocked(km.isKeyguardLocked, false); renderer.reload() } catch (e: Exception) { }
         }
         override fun onDestroy() {
             prefs.sp.unregisterOnSharedPreferenceChangeListener(this)
+            try { this@CodeWallpaperService.unregisterReceiver(rcv) } catch (e: Exception) { }
             h.removeCallbacks(tick)
             super.onDestroy()
         }
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-            if (key != null && key in Prefs.RELOAD_KEYS) renderer.reload()
+            if (key != null && key in Prefs.RELOAD_KEYS) { try { renderer.reload() } catch (e: Exception) { } }
+            if (visible) wake()
         }
         override fun onVisibilityChanged(v: Boolean) {
             visible = v
             h.removeCallbacks(tick)
             if (v) {
-                Presets.maybeSwitch(this@CodeWallpaperService, prefs)
+                try { Presets.maybeSwitch(this@CodeWallpaperService, prefs) } catch (e: Exception) { }
+                if (km.isKeyguardLocked) renderer.setLocked(true, false) else renderer.setLocked(false, true)
                 shownAt = SystemClock.uptimeMillis()
                 tick.run()
             }
@@ -81,20 +118,22 @@ class CodeWallpaperService : WallpaperService() {
         override fun onTouchEvent(e: MotionEvent) {
             if (e.actionMasked != MotionEvent.ACTION_DOWN || !prefs.touch) return
             renderer.poke(e.x, e.y)
-            shownAt = SystemClock.uptimeMillis()
-            if (visible) { h.removeCallbacks(tick); tick.run() }
+            wake()
         }
         override fun onSurfaceChanged(sh: SurfaceHolder?, f: Int, w: Int, hh: Int) {
-            super.onSurfaceChanged(sh, f, w, hh); draw()
+            super.onSurfaceChanged(sh, f, w, hh)
+            draw(if (prefs.static) prefs.staticT else (SystemClock.uptimeMillis() - t0) / 1000f)
         }
 
-        private fun draw() {
+        private fun draw(t: Float) {
             val holder = surfaceHolder
             val c = try { holder.lockHardwareCanvas() } catch (e: Exception) {
                 try { holder.lockCanvas() } catch (e2: Exception) { null }
             } ?: return
             try {
-                renderer.render(c, c.width.toFloat(), c.height.toFloat(), (SystemClock.uptimeMillis() - t0) / 1000f)
+                renderer.render(c, c.width.toFloat(), c.height.toFloat(), t)
+            } catch (e: Exception) {
+                // одна неудачная отрисовка не должна ронять обои
             } finally {
                 holder.unlockCanvasAndPost(c)
             }
