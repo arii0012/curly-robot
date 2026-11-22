@@ -28,6 +28,9 @@ object Thumbs {
     }
 
     fun timeFor(scene: Int) = when (scene) { 2 -> 9.5f; 3 -> 8f; else -> 3f }
+
+    @Synchronized
+    fun clear() { cache.clear() }
 }
 
 object Gallery {

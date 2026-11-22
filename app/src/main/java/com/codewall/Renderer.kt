@@ -47,6 +47,10 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
     }
 
     var parX = 0.5f
+    private var lastScale = 1f
+    /** Среднее время подготовки кадра, мс (для индикатора нагрузки). */
+    val frameMs: Float get() = ema
+    val lodLevel: Int get() = lod
     private val scenes = Scenes(ctx, prefs)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE; textAlign = Paint.Align.CENTER }
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -92,6 +96,9 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
         rpX[i] = x; rpY[i] = y; rpT[i] = System.nanoTime()
     }
 
+    /** Экран скрыт: гасим эффекты касаний. Рендер при этом уже остановлен сервисом. */
+    fun onHidden() { for (i in 0..2) rpT[i] = 0L }
+
     fun reload() {
         applyText()
         rebuildSlots()
@@ -117,8 +124,12 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
     private fun adapt(ms: Float) {
         ema = ema * 0.92f + ms * 0.08f
         frames++
-        if (frames % 40 != 0 || prefs.scene != 0) return
+        if (frames % 30 != 0) return
         val budget = 1000f / prefs.fps.coerceIn(10, 144)
+        // PerformanceGuard сам подбирает плотность частиц; при смене — пересобираем сцену
+        PerformanceGuard.report(ema, budget)
+        if (PerformanceGuard.scale != lastScale) { lastScale = PerformanceGuard.scale; scenes.reload() }
+        if (prefs.scene != 0) return
         if (ema > budget * 0.55f && lod < 4) { lod++; rebuildSlots() }
         else if (ema < budget * 0.2f && lod > 0) { lod--; rebuildSlots() }
     }
@@ -394,6 +405,10 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
     private var hh = 0; private var mm = 0; private var bat = 100; private var dayIdx = 0; private var dowIdx = 0
     private var isNight = false; private var todayEpoch = 0L; private var yearPct = 0f
     private val dateCache = HashMap<String, Long>()
+    private val dsBuf = IntArray(4)
+    private var batText = ""; private var batNum = ""; private var batPct = ""; private var yearTxt1 = ""; private var yearTxt2 = ""
+    private var gradSh: LinearGradient? = null
+    private var gradKey = 0L
     private var curU = 1f; private var curW = 1f; private var curCol = 0; private var curWd: Wdg? = null
 
     private fun battery(): Int {
@@ -432,6 +447,9 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
         isNight = hh >= 22 || hh < 7
         val ld = LocalDate.now()
         todayEpoch = ld.toEpochDay(); yearPct = ld.dayOfYear / ld.lengthOfYear().toFloat()
+        // строки виджетов готовим раз в секунду, чтобы не создавать мусор в onDraw
+        batText = "BAT $bat%"; batNum = "$bat"; batPct = "$bat%"
+        val pcy = (yearPct * 100f).toInt(); yearTxt1 = "ГОД $pcy%"; yearTxt2 = "$pcy%"
     }
 
     private fun widgets(c: Canvas, w: Float, h: Float, t: Float) {
@@ -522,9 +540,14 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
                 wp.color = keepC
             }
             3 -> {
-                wp.shader = LinearGradient(x - u * 2f, 0f, x + u * 2f, 0f, curCol, curWd?.color2 ?: curCol, Shader.TileMode.CLAMP)
-                c.drawText(s, x, y, wp)
+                val c2 = curWd?.color2 ?: curCol
+                val key = (curCol.toLong() shl 32) xor (c2.toLong() and 0xFFFFFFFFL) xor (u.toLong() shl 8)
+                if (gradSh == null || gradKey != key) { gradSh = LinearGradient(-u * 2f, 0f, u * 2f, 0f, curCol, c2, Shader.TileMode.CLAMP); gradKey = key }
+                c.save(); c.translate(x, y)
+                wp.shader = gradSh
+                c.drawText(s, 0f, 0f, wp)
                 wp.shader = null
+                c.restore()
                 return
             }
             4 -> {
@@ -571,9 +594,9 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
             0 -> clock(c, t, u, wd, col)
             1 -> date(c, t, u, wd)
             2 -> when (wd.style) {
-                0 -> { wp.textSize = u * 0.8f; txt(c, typed("BAT $bat%", wd, t), 0f, u * 0.3f) }
-                1 -> { ring(c, u, bat / 100f); wp.textSize = u * 0.7f; txt(c, "$bat", 0f, u * 0.25f) }
-                else -> { bar(c, u, bat / 100f, u * 2f); wp.textSize = u * 0.5f; txt(c, "$bat%", 0f, -u * 0.5f) }
+                0 -> { wp.textSize = u * 0.8f; txt(c, typed(batText, wd, t), 0f, u * 0.3f) }
+                1 -> { ring(c, u, bat / 100f); wp.textSize = u * 0.7f; txt(c, batNum, 0f, u * 0.25f) }
+                else -> { bar(c, u, bat / 100f, u * 2f); wp.textSize = u * 0.5f; txt(c, batPct, 0f, -u * 0.5f) }
             }
             3 -> {
                 wp.textSize = u * 0.9f
@@ -624,9 +647,8 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
                 }
             }
             8 -> {
-                val pc = (yearPct * 100f).toInt()
-                if (wd.style == 0) { bar(c, u, yearPct, u * 2f); wp.textSize = u * 0.55f; txt(c, "ГОД $pc%", 0f, -u * 0.55f) }
-                else { ring(c, u, yearPct); wp.textSize = u * 0.6f; txt(c, "$pc%", 0f, u * 0.2f) }
+                if (wd.style == 0) { bar(c, u, yearPct, u * 2f); wp.textSize = u * 0.55f; txt(c, yearTxt1, 0f, -u * 0.55f) }
+                else { ring(c, u, yearPct); wp.textSize = u * 0.6f; txt(c, yearTxt2, 0f, u * 0.2f) }
             }
             9 -> {
                 val parts = wd.text.split(';')
@@ -676,7 +698,7 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
                 c.drawText(s, 0f, u * 0.6f, wp)
             }
             2 -> {
-                val ds = intArrayOf(hh / 10, hh % 10, mm / 10, mm % 10)
+                val ds = dsBuf; ds[0] = hh / 10; ds[1] = hh % 10; ds[2] = mm / 10; ds[3] = mm % 10
                 val gap = u * 0.55f
                 for (cc in 0..3) for (rr in 0..3) {
                     val on = (ds[cc] shr (3 - rr)) and 1

@@ -25,10 +25,11 @@ class Ui(private val a: Activity) {
     fun toast(m: String) { Toast.makeText(a, m, Toast.LENGTH_SHORT).show() }
     fun hap(v: View) { v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
 
-    fun bg(fill: Int, stroke: Int, rad: Int = 16): GradientDrawable {
-        val g = GradientDrawable()
-        g.setColor(fill); g.setStroke(dp(1), stroke); g.cornerRadius = dp(rad).toFloat() * Skin.radius
-        return g
+    fun bg(fill: Int, stroke: Int, rad: Int = 16): PanelDrawable {
+        val sk = Skin.cur
+        var f = fill
+        if ((fill == sk.panel || fill == sk.panel2) && sk.panelAlpha < 1f) f = (fill and 0x00FFFFFF) or ((sk.panelAlpha * 255f).toInt() shl 24)
+        return PanelDrawable(f, stroke, dp(rad).toFloat() * Skin.radius, dp(1).toFloat() * sk.strokeDp, sk.kind, sk.accent2)
     }
 
     fun card(root: LinearLayout, tag: String, title: String): LinearLayout {
@@ -42,7 +43,7 @@ class Ui(private val a: Activity) {
             c.addView(t1)
         }
         val t2 = TextView(a)
-        t2.text = title; t2.setTextColor(TXT); t2.textSize = 19f
+        t2.text = title; t2.setTextColor(TXT); t2.textSize = 19f; t2.typeface = Skin.tf
         t2.setPadding(0, dp(3), 0, dp(10))
         c.addView(t2)
         val lp = LinearLayout.LayoutParams(-1, -2)
@@ -61,7 +62,7 @@ class Ui(private val a: Activity) {
 
     fun btn(c: LinearLayout, t: String, accent: Boolean, click: () -> Unit) {
         val b = Button(a)
-        b.text = t
+        b.text = t; b.typeface = Skin.tf
         b.setTextColor(if (accent) ON else TXT)
         b.background = bg(if (accent) G else DARK, if (accent) G else LINE, 20)
         b.setOnClickListener { hap(b); click() }
@@ -104,7 +105,7 @@ class Ui(private val a: Activity) {
         }
         for (i in labels.indices) {
             val tv = TextView(a)
-            tv.text = labels[i]
+            tv.text = labels[i]; tv.typeface = Skin.tf
             tv.gravity = Gravity.CENTER
             tv.textSize = if (labels.size >= 5) 12f else if (labels.size == 4) 13f else 15f
             tv.setOnClickListener { hap(tv); paintAll(i); onSel(i) }
@@ -135,7 +136,7 @@ class Ui(private val a: Activity) {
         }
         for (i in labels.indices) {
             val tv = TextView(a)
-            tv.text = labels[i]; tv.textSize = 14f; tv.gravity = Gravity.CENTER
+            tv.text = labels[i]; tv.textSize = 14f; tv.gravity = Gravity.CENTER; tv.typeface = Skin.tf
             tv.setPadding(dp(16), 0, dp(16), 0)
             tv.setOnClickListener { hap(tv); paintAll(i); onSel(i) }
             tvs.add(tv)
@@ -153,10 +154,20 @@ class Ui(private val a: Activity) {
             tv.background = bg(if (on) Skin.chipOn() else PANEL, if (on) G else LINE, 20)
             tv.setTextColor(if (on) TXT else DIM)
         }
-        tv.text = label; tv.textSize = 13f; tv.gravity = Gravity.CENTER
+        tv.text = label; tv.textSize = 13f; tv.gravity = Gravity.CENTER; tv.typeface = Skin.tf
         tv.setPadding(dp(14), 0, dp(14), 0)
         paintIt()
         tv.setOnClickListener { hap(tv); on = !on; paintIt(); onChange(on) }
+        row.addView(tv, LinearLayout.LayoutParams(-2, dp(36)).apply { marginEnd = dp(6) })
+    }
+
+    /** Акцентная кнопка-«таблетка» (действие, а не переключатель). */
+    fun action(row: LinearLayout, label: String, click: () -> Unit) {
+        val tv = TextView(a)
+        tv.text = label; tv.textSize = 13f; tv.gravity = Gravity.CENTER; tv.typeface = Skin.tf
+        tv.setTextColor(ON); tv.setPadding(dp(14), 0, dp(14), 0)
+        tv.background = bg(G, G, 20)
+        tv.setOnClickListener { hap(tv); click() }
         row.addView(tv, LinearLayout.LayoutParams(-2, dp(36)).apply { marginEnd = dp(6) })
     }
 

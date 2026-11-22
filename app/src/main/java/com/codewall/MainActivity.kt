@@ -5,10 +5,13 @@ import android.app.DatePickerDialog
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.SharedPreferences
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -32,6 +35,9 @@ class MainActivity : Activity() {
     private var editing = -1
     private var dest = 0
     private var started = false
+    private var awaitingInstall = false
+    private lateinit var rootFrame: FrameLayout
+    private lateinit var backdrop: ThemeBackdrop
     private var pendingBytes: ByteArray? = null
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, k -> if (k in Prefs.RELOAD_KEYS) r.reload() }
 
@@ -41,17 +47,21 @@ class MainActivity : Activity() {
         p = Prefs(this); Skin.load(p); r = Renderer(this, p); ui = Ui(this)
         if (b != null) { tab = b.getInt("tab"); sub = b.getInt("sub"); tsub = b.getInt("tsub") }
         window.statusBarColor = ui.BG; window.navigationBarColor = ui.BG
-        if (Skin.cur.name == "Светлая") window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        if (Skin.isLight()) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
 
+        rootFrame = FrameLayout(this)
+        rootFrame.setBackgroundColor(ui.BG)
+        backdrop = ThemeBackdrop(this)
+        backdrop.running = p.uiAnim
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(ui.BG)
 
         // полоса быстрых настроек: всегда под рукой
         val strip = HorizontalScrollView(this)
         strip.isHorizontalScrollBarEnabled = false
         val srow = LinearLayout(this)
         srow.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(2))
+        ui.action(srow, "✦ Применить") { applyWallpaper() }
         ui.pill(srow, "◉ Рябь", p.touch) { v -> p.touch = v }
         ui.pill(srow, "↔ Параллакс", p.parallax) { v -> p.parallax = v }
         ui.pill(srow, "✦ Свечение", p.glow) { v -> p.glow = v }
@@ -77,7 +87,12 @@ class MainActivity : Activity() {
             navViews.add(tv)
             nav.addView(tv, LinearLayout.LayoutParams(0, -1, 1f))
         }
-        setContentView(root)
+        rootFrame.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+        rootFrame.addView(root, FrameLayout.LayoutParams(-1, -1))
+        setContentView(rootFrame)
+        // плавное появление после смены темы
+        rootFrame.alpha = 0f
+        rootFrame.animate().alpha(1f).setDuration(260).start()
         showTab(tab)
     }
 
@@ -91,11 +106,17 @@ class MainActivity : Activity() {
         p.sp.registerOnSharedPreferenceChangeListener(listener)
         r.reload()
         pv?.invalidate()
-        if (started && (tab == 0)) showTab(0)
+        backdrop.running = p.uiAnim
+        backdrop.invalidate()
+        if (awaitingInstall) {
+            awaitingInstall = false
+            if (isActive()) { Banner.show(rootFrame, ui, "Успешно! Всё сделано, живые обои запущены"); if (tab == 0) showTab(0) }
+        } else if (started && (tab == 0)) showTab(0)
         started = true
     }
 
     override fun onPause() {
+        backdrop.running = false
         p.sp.unregisterOnSharedPreferenceChangeListener(listener)
         super.onPause()
     }
@@ -150,6 +171,82 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Если обои уже установлены — обновляются мгновенно (без системных окон), иначе открывается системная установка. */
+    private fun applyWallpaper() {
+        if (isActive()) {
+            p.stamp = System.currentTimeMillis()
+            r.reload()
+            Banner.show(rootFrame, ui, "Успешно обновлено и запущено!")
+        } else {
+            WallpaperBackup.save(this, p)
+            awaitingInstall = true
+            installWallpaper()
+        }
+    }
+
+    private fun restorePrevious() {
+        val live = WallpaperBackup.liveIntent(p)
+        if (live != null) {
+            try { startActivity(live); ui.toast("Возвращаю прежние живые обои") } catch (e: Exception) { ui.toast("Не удалось открыть выбор обоев") }
+            return
+        }
+        if (WallpaperBackup.canRestore(this, p)) {
+            Thread {
+                val ok = WallpaperBackup.restoreStatic(this)
+                runOnUiThread { ui.toast(if (ok) "Прежние обои возвращены" else "Не удалось вернуть обои") }
+            }.start()
+        } else {
+            ui.toast("Прежние обои сохранить не удалось — выбери их в системном меню")
+            try { startActivity(Intent(Intent.ACTION_SET_WALLPAPER)) } catch (e: Exception) { }
+        }
+    }
+
+    private fun optimizeNow() {
+        val msg = PerformanceGuard.optimize(this)
+        r.reload()
+        ui.toast(msg)
+    }
+
+    private fun colorChanged(a: LinearLayout) { if (p.skin == Skin.CHAMELEON) recreate() else fillDesign(a) }
+
+    private fun applySkin(i: Int) { p.skin = i; p.accentCustom = 0; recreate() }
+
+    private fun showLog() {
+        val head = "PoiPaper · Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") · " + Build.MODEL
+        val log = CrashLog.read(this).ifEmpty { "Ошибок нет." }
+        val tv = TextView(this)
+        tv.text = head + "\n\n" + log
+        tv.setTextIsSelectable(true); tv.textSize = 11f; tv.typeface = Typeface.MONOSPACE
+        tv.setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12))
+        val sv = ScrollView(this)
+        sv.addView(tv)
+        AlertDialog.Builder(this).setTitle("Журнал ошибок").setView(sv)
+            .setPositiveButton("КОПИРОВАТЬ") { _, _ ->
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("PoiPaper log", tv.text))
+                ui.toast("Скопировано")
+            }
+            .setNegativeButton("ОЧИСТИТЬ") { _, _ -> CrashLog.clear(this); ui.toast("Журнал очищен") }
+            .setNeutralButton("Закрыть", null).show()
+    }
+
+    private fun resetAll() {
+        AlertDialog.Builder(this).setTitle("Сбросить все настройки обоев?")
+            .setMessage("Фигуры, сборки и оформление приложения останутся. Вернуть можно кнопкой «Откатить последний пак».")
+            .setPositiveButton("СБРОСИТЬ") { _, _ ->
+                val snap = p.snapshot(Prefs.SKIP)
+                val author = p.author; val sk = p.skin; val ac = p.accentCustom; val co = p.corners; val sw = p.skinWithTheme
+                val ph = p.prevLive; val ps = p.prevStatic
+                p.sp.edit().clear().putString("backup", snap).putBoolean("skinV2", true).commit()
+                p.author = author; p.skin = sk; p.accentCustom = ac; p.corners = co; p.skinWithTheme = sw
+                p.prevLive = ph; p.prevStatic = ps
+                r.reload()
+                ui.toast("Настройки сброшены")
+                recreate()
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
+
     // ================= ГЛАВНАЯ =================
     private fun pageHome() {
         val head = LinearLayout(this)
@@ -171,10 +268,11 @@ class MainActivity : Activity() {
         content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(10) })
         previewCard(0.40f)
         val rows = listOf(
-            listOf(Triple("✦", "УСТАНОВИТЬ", true) to { installWallpaper() }, Triple("⤢", "РАЗМЕТКА", false) to { startActivity(Intent(this, LayoutActivity::class.java)) }),
+            listOf(Triple("✦", "ПРИМЕНИТЬ", true) to { applyWallpaper() }, Triple("⤢", "РАЗМЕТКА", false) to { startActivity(Intent(this, LayoutActivity::class.java)) }),
             listOf(Triple("🎲", "УДИВИ МЕНЯ", false) to { surprise() }, Triple("🔗", "ПАРНЫЕ ОБОИ", false) to { sub = 6; showTab(1) }),
             listOf(Triple("🖼", "ОБЫЧНЫЕ ОБОИ", false) to { staticDialog() }, Triple("⬇", "СОХРАНИТЬ КАДР", false) to { saveFrame() }),
-            listOf(Triple("★", "МОИ СБОРКИ", false) to { tsub = 1; showTab(3) }, Triple("⇪", "ПОДЕЛИТЬСЯ", false) to { exportPoa() })
+            listOf(Triple("★", "МОИ СБОРКИ", false) to { tsub = 1; showTab(3) }, Triple("⇪", "ПОДЕЛИТЬСЯ", false) to { exportPoa() }),
+            listOf(Triple("⚡", "ОПТИМИЗИРОВАТЬ", false) to { optimizeNow() }, Triple("↩", "ПРОШЛЫЕ ОБОИ", false) to { restorePrevious() })
         )
         for (row in rows) {
             val lr = LinearLayout(this)
@@ -205,10 +303,15 @@ class MainActivity : Activity() {
     private fun saveFrame() {
         ui.toast("Рисую кадр…")
         Thread {
-            val bo = ByteArrayOutputStream()
-            renderBitmap(false).compress(Bitmap.CompressFormat.PNG, 100, bo)
-            pendingBytes = bo.toByteArray()
-            runOnUiThread { createDoc("poipaper.png", "image/png") }
+            try {
+                val bo = ByteArrayOutputStream()
+                renderBitmap(false).compress(Bitmap.CompressFormat.PNG, 100, bo)
+                pendingBytes = bo.toByteArray()
+                runOnUiThread { createDoc("poipaper.png", "image/png") }
+            } catch (e: Throwable) {
+                CrashLog.add(this, "Сохранение кадра", e)
+                runOnUiThread { ui.toast("Не хватило памяти. Нажми «Оптимизировать» и повтори.") }
+            }
         }.start()
     }
 
@@ -226,7 +329,7 @@ class MainActivity : Activity() {
                 if (which == 0 || which == 2) wm.setBitmap(renderBitmap(false), null, true, WallpaperManager.FLAG_SYSTEM)
                 if (which == 1 || which == 2) wm.setBitmap(renderBitmap(true), null, true, WallpaperManager.FLAG_LOCK)
                 true
-            } catch (e: Exception) { false }
+            } catch (e: Throwable) { CrashLog.add(this, "Обычные обои", e); false }
             runOnUiThread { ui.toast(if (ok) "Обои поставлены" else "Не удалось поставить обои") }
         }.start()
     }
@@ -359,8 +462,8 @@ class MainActivity : Activity() {
 
     private fun dsColor(a: LinearLayout) {
         ui.card(a, "", "Цвет").let {
-            ui.swatches(it, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE[i]; p.rainbow = false; fillDesign(a) }
-            ui.swatches(it, Prefs.PALETTE2, Prefs.PALETTE2.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE2[i]; p.rainbow = false; fillDesign(a) }
+            ui.swatches(it, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE[i]; p.rainbow = false; colorChanged(a) }
+            ui.swatches(it, Prefs.PALETTE2, Prefs.PALETTE2.indexOf(p.colorInt)) { i -> p.colorInt = Prefs.PALETTE2[i]; p.rainbow = false; colorChanged(a) }
             ui.field(it, "Свой цвет, например #FF8800", String.format("#%06X", p.colorInt and 0xFFFFFF)) { s ->
                 val m = Regex("^#?([0-9A-Fa-f]{6})$").find(s.trim())
                 if (m != null) { p.colorInt = 0xFF000000.toInt() or m.groupValues[1].toInt(16); p.rainbow = false }
@@ -626,9 +729,9 @@ class MainActivity : Activity() {
                 }
             }
             else -> {
-                ui.card(a, "", "Оформление").let { c ->
-                    for (i in Skin.ALL.indices) {
-                        val sd = Skin.ALL[i]
+                ui.card(a, "", "Темы приложения").let { c ->
+                    for (i in 0 until Skin.COUNT) {
+                        val sd = Skin.def(i, p)
                         val row = LinearLayout(this)
                         row.gravity = Gravity.CENTER_VERTICAL
                         row.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
@@ -639,20 +742,27 @@ class MainActivity : Activity() {
                         dot.background = g
                         row.addView(dot, LinearLayout.LayoutParams(ui.dp(22), ui.dp(22)))
                         val tv = TextView(this)
-                        tv.text = sd.name; tv.setTextColor(sd.text); tv.textSize = 16f; tv.setPadding(ui.dp(12), 0, 0, 0)
+                        tv.text = sd.name + (if (sd.mood) "  · настроение" else "") + (if (i == Skin.CHAMELEON) "  · под цвет обоев" else "")
+                        tv.setTextColor(sd.text); tv.textSize = 16f; tv.setPadding(ui.dp(12), 0, 0, 0)
                         row.addView(tv)
-                        row.setOnClickListener { ui.hap(row); p.skin = i; p.accentCustom = 0; recreate() }
+                        row.setOnClickListener { ui.hap(row); applySkin(i) }
                         c.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
                     }
                 }
-                ui.card(a, "", "Свой акцент").let { c ->
+                ui.card(a, "", "Своя тема").let { c ->
+                    ui.slider(c, "оттенок", 0f, 360f, p.customH, { v -> "" + v.toInt() + "°" }) { v -> p.customH = v }
+                    ui.slider(c, "насыщенность", 0f, 1f, p.customS, { v -> pct(v) }) { v -> p.customS = v }
+                    ui.slider(c, "яркость акцента", 0.3f, 1f, p.customV, { v -> pct(v) }) { v -> p.customV = v }
+                    ui.slider(c, "прозрачность панелей", 0.3f, 1f, p.customA, { v -> pct(v) }) { v -> p.customA = v }
+                    ui.btn(c, "ПРИМЕНИТЬ СВОЮ ТЕМУ", true) { applySkin(Skin.CUSTOM) }
+                }
+                ui.card(a, "", "Акцент и углы").let { c ->
                     ui.swatches(c, Prefs.PALETTE, Prefs.PALETTE.indexOf(p.accentCustom)) { i -> p.accentCustom = Prefs.PALETTE[i]; recreate() }
                     ui.swatches(c, Prefs.PALETTE2, Prefs.PALETTE2.indexOf(p.accentCustom)) { i -> p.accentCustom = Prefs.PALETTE2[i]; recreate() }
                     ui.btn(c, "АКЦЕНТ ИЗ ТЕМЫ", false) { p.accentCustom = 0; recreate() }
-                }
-                ui.card(a, "", "Углы").let { c ->
                     ui.chips(c, listOf("Острые", "Мягкие", "Круглые"), p.corners) { i -> p.corners = i; recreate() }
                     ui.toggle(c, "Менять оформление вместе с темой обоев", p.skinWithTheme) { v -> p.skinWithTheme = v }
+                    ui.toggle(c, "Анимированный фон интерфейса", p.uiAnim) { v -> p.uiAnim = v; backdrop.running = v; backdrop.invalidate() }
                 }
             }
         }
@@ -678,6 +788,12 @@ class MainActivity : Activity() {
             ui.btn(it, "ОТКАТИТЬ ПОСЛЕДНИЙ ПАК", false) {
                 if (p.restoreBackup()) { r.reload(); ui.toast("Откат выполнен"); showTab(4) } else ui.toast("Нечего откатывать")
             }
+        }
+        ui.card(content, "", "Диагностика").let {
+            ui.toggle(it, "Показывать FPS и нагрузку в предпросмотре", p.hud) { v -> p.hud = v }
+            ui.btn(it, "ОПТИМИЗИРОВАТЬ ПАМЯТЬ И FPS", true) { optimizeNow() }
+            ui.btn(it, "ЖУРНАЛ ОШИБОК", false) { showLog() }
+            ui.btn(it, "СБРОСИТЬ ВСЕ НАСТРОЙКИ ОБОЕВ", false) { resetAll() }
         }
     }
 
@@ -746,11 +862,15 @@ class MainActivity : Activity() {
                 startActivityForResult(i, 5)
             }
             2 -> importFile(uri)
-            3 -> try {
-                contentResolver.openOutputStream(uri)?.use { it.write(pendingBytes ?: ByteArray(0)) }
-                pendingBytes = null
-                ui.toast("Файл сохранён")
-            } catch (e: Exception) { ui.toast("Не удалось сохранить файл") }
+            3 -> {
+                val data = pendingBytes
+                if (data == null) ui.toast("Нечего сохранять")
+                else try {
+                    contentResolver.openOutputStream(uri)?.use { it.write(data) }
+                    pendingBytes = null
+                    ui.toast("Файл сохранён")
+                } catch (e: Exception) { CrashLog.add(this, "Сохранение файла", e); ui.toast("Не удалось сохранить файл") }
+            }
         }
     }
 }

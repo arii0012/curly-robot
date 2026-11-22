@@ -30,6 +30,13 @@ class CodeWallpaperService : WallpaperService() {
         private var lowBat = false
         private var lastBat = 0L
         private var frozenT = -1f
+        private var lastErr = 0L
+
+        // журнал сбоев без спама: не чаще раза в 10 секунд
+        private fun logErr(what: String, e: Throwable) {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastErr > 10000) { lastErr = now; CrashLog.add(this@CodeWallpaperService, what, e) }
+        }
 
         private val rcv = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, i: Intent?) {
@@ -90,7 +97,7 @@ class CodeWallpaperService : WallpaperService() {
             val f = IntentFilter()
             f.addAction(Intent.ACTION_SCREEN_OFF); f.addAction(Intent.ACTION_USER_PRESENT)
             try { this@CodeWallpaperService.registerReceiver(rcv, f) } catch (e: Exception) { }
-            try { renderer.setLocked(km.isKeyguardLocked, false); renderer.reload() } catch (e: Exception) { }
+            try { renderer.setLocked(km.isKeyguardLocked, false); renderer.reload() } catch (e: Throwable) { logErr("Старт обоев", e) }
         }
         override fun onDestroy() {
             prefs.sp.unregisterOnSharedPreferenceChangeListener(this)
@@ -99,7 +106,7 @@ class CodeWallpaperService : WallpaperService() {
             super.onDestroy()
         }
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-            if (key != null && key in Prefs.RELOAD_KEYS) { try { renderer.reload() } catch (e: Exception) { } }
+            if (key != null && key in Prefs.RELOAD_KEYS) { try { renderer.reload() } catch (e: Throwable) { logErr("Перезагрузка сцены", e) } }
             if (visible) wake()
         }
         override fun onVisibilityChanged(v: Boolean) {
@@ -110,6 +117,10 @@ class CodeWallpaperService : WallpaperService() {
                 if (km.isKeyguardLocked) renderer.setLocked(true, false) else renderer.setLocked(false, true)
                 shownAt = SystemClock.uptimeMillis()
                 tick.run()
+            } else {
+                // экран скрыт: рендер полностью спит, ни одного отложенного кадра
+                h.removeCallbacksAndMessages(null)
+                renderer.onHidden()
             }
         }
         override fun onOffsetsChanged(x: Float, y: Float, xs: Float, ys: Float, xp: Int, yp: Int) {
@@ -132,8 +143,9 @@ class CodeWallpaperService : WallpaperService() {
             } ?: return
             try {
                 renderer.render(c, c.width.toFloat(), c.height.toFloat(), t)
-            } catch (e: Exception) {
-                // одна неудачная отрисовка не должна ронять обои
+            } catch (e: Throwable) {
+                // одна неудачная отрисовка (в том числе нехватка памяти) не должна ронять обои
+                logErr("Ошибка отрисовки", e)
             } finally {
                 holder.unlockCanvasAndPost(c)
             }

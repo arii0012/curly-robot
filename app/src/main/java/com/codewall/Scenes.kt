@@ -28,7 +28,7 @@ class Scenes(private val ctx: Context, private val prefs: Prefs) {
 
     private fun density(): Float {
         val q = when (prefs.quality) { 0 -> 0.6f; 2 -> 1.3f; else -> 1f }
-        return prefs.density * q
+        return prefs.density * q * PerformanceGuard.scale
     }
 
     fun draw(type: Int, c: Canvas, w: Float, h: Float, t: Float, cyFrac: Float) {
@@ -251,7 +251,7 @@ class Scenes(private val ctx: Context, private val prefs: Prefs) {
         // коробка
         run {
             val bmp = boxBitmap(); val W = bmp.width
-            val px = IntArray(W * bmp.height); bmp.getPixels(px, 0, W, 0, 0, W, bmp.height)
+            val px = IntArray(W * bmp.height); bmp.getPixels(px, 0, W, 0, 0, W, bmp.height); bmp.recycle()
             val pool = ArrayList<Int>()
             for (i in px.indices) { if (Color.alpha(px[i]) < 128) continue; val ci = nearest(px[i], fixedIdx); repeat(if (ci == 0) 2 else 1) { pool.add(i) } }
             for (i in 0 until n) {
@@ -284,7 +284,7 @@ class Scenes(private val ctx: Context, private val prefs: Prefs) {
         }
         if (!done) {
             val bmp = bearBitmap(); val W = bmp.width
-            val px = IntArray(W * bmp.height); bmp.getPixels(px, 0, W, 0, 0, W, bmp.height)
+            val px = IntArray(W * bmp.height); bmp.getPixels(px, 0, W, 0, 0, W, bmp.height); bmp.recycle()
             val pool = ArrayList<Int>()
             for (i in px.indices) { if (Color.alpha(px[i]) < 128) continue; val ci = nearest(px[i], fixedIdx); repeat(if (ci == 0 || ci == 6) 3 else 1) { pool.add(i) } }
             for (i in 0 until n) {

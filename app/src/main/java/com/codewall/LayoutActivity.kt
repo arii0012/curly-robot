@@ -3,6 +3,9 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import kotlin.math.max
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -39,15 +42,33 @@ class PreviewView(ctx: Context, private val r: Renderer, private val p: Prefs) :
         }
     }
 
+    private val hudP = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE; setShadowLayer(4f, 0f, 0f, Color.BLACK) }
+    private var fpsCount = 0
+    private var fpsT = 0L
+    private var fpsShown = 0
+
     override fun onDraw(c: Canvas) {
         r.render(c, width.toFloat(), height.toFloat(), (SystemClock.uptimeMillis() - t0) / 1000f)
+        if (p.hud) {
+            val now = SystemClock.uptimeMillis()
+            fpsCount++
+            if (now - fpsT >= 1000L) { fpsShown = fpsCount; fpsCount = 0; fpsT = now }
+            val budget = 1000f / p.fps.coerceIn(10, 144)
+            hudP.textSize = max(18f, width * 0.06f)
+            hudP.color = if (r.frameMs < budget * 0.5f) 0xFF7CFF8A.toInt() else if (r.frameMs < budget * 0.8f) 0xFFFFD84D.toInt() else 0xFFFF5D5D.toInt()
+            c.drawText(String.format("%d FPS · %.1f мс", fpsShown, r.frameMs), 8f, hudP.textSize + 4f, hudP)
+        }
         postInvalidateOnAnimation()
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!interactive) return false
         sd.onTouchEvent(e)
-        if (sd.isInProgress || e.pointerCount > 1) { lx = e.x; ly = e.y; return true }
+        if (sd.isInProgress || e.pointerCount > 1) {
+            if (e.actionMasked == MotionEvent.ACTION_POINTER_UP) { val k = if (e.actionIndex == 0) 1 else 0; lx = e.getX(k); ly = e.getY(k) }
+            else { lx = e.x; ly = e.y }
+            return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { lx = e.x; ly = e.y }
             MotionEvent.ACTION_MOVE -> { move((e.x - lx) / width, (e.y - ly) / height); lx = e.x; ly = e.y }

@@ -71,6 +71,14 @@ class Prefs(ctx: Context, name: String = "cfg") {
     var moon: Boolean get() = sb("moon", true); set(v) = pb("moon", v)
     var static: Boolean get() = sb("static", false); set(v) = pb("static", v)
     var staticT: Float get() = sf("staticT", 6f); set(v) = pf("staticT", v)
+    var hud: Boolean get() = sb("hud", true); set(v) = pb("hud", v)
+    var uiAnim: Boolean get() = sb("uiAnim", true); set(v) = pb("uiAnim", v)
+    var customH: Float get() = sf("customH", 200f); set(v) = pf("customH", v)
+    var customS: Float get() = sf("customS", 0.7f); set(v) = pf("customS", v)
+    var customV: Float get() = sf("customV", 0.95f); set(v) = pf("customV", v)
+    var customA: Float get() = sf("customA", 0.7f); set(v) = pf("customA", v)
+    var prevLive: String get() = ss("prevLive", ""); set(v) = ps("prevLive", v)
+    var prevStatic: Boolean get() = sb("prevStatic", false); set(v) = pb("prevStatic", v)
     // оформление приложения
     var skin: Int get() = si("skin", 0); set(v) = pi("skin", v)
     var accentCustom: Int get() = si("accentCustom", 0); set(v) = pi("accentCustom", v)
@@ -119,8 +127,8 @@ class Prefs(ctx: Context, name: String = "cfg") {
             0xFFFFD84D.toInt(), 0xFFA3FF3D.toInt(), 0xFF00E5B0.toInt(), 0xFF4D7CFF.toInt(),
             0xFFE040FB.toInt(), 0xFFFF8FC7.toInt(), 0xFFB0B8C0.toInt(), 0xFF8B5E3C.toInt()
         )
-        val SKIP = setOf("backup", "author", "shuffleAt", "shuffleIdx")
-        val PRESET_SKIP = SKIP + setOf("skin", "accentCustom", "corners", "skinWithTheme", "shuffle")
+        val SKIP = setOf("backup", "author", "shuffleAt", "shuffleIdx", "prevLive", "prevStatic")
+        val PRESET_SKIP = SKIP + setOf("skin", "accentCustom", "corners", "skinWithTheme", "shuffle", "hud", "uiAnim", "customH", "customS", "customV", "customA", "skinV2")
         val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt", "planetStyle", "ring", "codeText", "holeRings", "giftShape", "heartShape", "galVar", "mxVar", "moon")
     }
 }

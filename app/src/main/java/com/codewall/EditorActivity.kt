@@ -7,6 +7,7 @@ import android.net.Uri
 import android.media.ExifInterface
 import android.os.Bundle
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.*
@@ -27,6 +28,22 @@ class EditorView(ctx: Context) : View(ctx) {
     private val selPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = Color.WHITE }
     private var sx = 0; private var sy = 0; private var ex = 0; private var ey = 0
     private var selecting = false
+    private var zoom = 1f
+    private var panX = 0f
+    private var panY = 0f
+    private var multi = false
+    private var lastMx = 0f
+    private var lastMy = 0f
+    private val sd = ScaleGestureDetector(ctx, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(d: ScaleGestureDetector): Boolean {
+            zoom = (zoom * d.scaleFactor).coerceIn(1f, 6f)
+            invalidate()
+            return true
+        }
+    })
+
+    /** Вернуть масштаб и положение холста. */
+    fun resetView() { zoom = 1f; panX = 0f; panY = 0f; invalidate() }
 
     fun setData(newOn: BooleanArray, newRows: Int, ph: Bitmap) {
         on = newOn; rows = newRows; photo = ph; hist.clear(); rebuild(); invalidate()
@@ -70,7 +87,8 @@ class EditorView(ctx: Context) : View(ctx) {
         val ar = (cols * 0.6f) / (rows * 0.8f)
         var w = width.toFloat(); var h = w / ar
         if (h > height) { h = height.toFloat(); w = h * ar }
-        dst.set((width - w) / 2, (height - h) / 2, (width + w) / 2, (height + h) / 2)
+        val zc = width / 2f + panX; val zy = height / 2f + panY
+        dst.set(zc - w * zoom / 2, zy - h * zoom / 2, zc + w * zoom / 2, zy + h * zoom / 2)
         paint.isFilterBitmap = false
         photo?.let { paint.alpha = 90; c.drawBitmap(it, null, dst, paint) }
         maskBmp?.let { paint.alpha = 210; c.drawBitmap(it, null, dst, paint) }
@@ -83,6 +101,24 @@ class EditorView(ctx: Context) : View(ctx) {
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (rows == 0) return true
+        sd.onTouchEvent(e)
+        if (e.pointerCount >= 2 || sd.isInProgress) {
+            // два пальца: масштаб и сдвиг холста, рисование в это время не идёт
+            multi = true; selecting = false
+            val mx = if (e.pointerCount >= 2) (e.getX(0) + e.getX(1)) / 2f else e.x
+            val my = if (e.pointerCount >= 2) (e.getY(0) + e.getY(1)) / 2f else e.y
+            if (e.actionMasked == MotionEvent.ACTION_MOVE) {
+                panX = (panX + mx - lastMx).coerceIn(-width * zoom, width * zoom)
+                panY = (panY + my - lastMy).coerceIn(-height * zoom, height * zoom)
+            }
+            lastMx = mx; lastMy = my
+            invalidate()
+            return true
+        }
+        if (multi) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) multi = false
+            return true
+        }
         val cx = ((e.x - dst.left) / dst.width() * cols).toInt().coerceIn(0, cols - 1)
         val cy = ((e.y - dst.top) / dst.height() * rows).toInt().coerceIn(0, rows - 1)
         val value = tool == 0 || tool == 2
@@ -133,7 +169,7 @@ class EditorActivity : Activity() {
                 bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
             }
             bmp
-        } catch (e: Exception) { null }
+        } catch (e: Throwable) { null }
     }
 
     private fun regen() {
@@ -159,6 +195,7 @@ class EditorActivity : Activity() {
             ui.slider(it, "размер кисти", 1f, 10f, ev.brush.toFloat(), { v -> "" + v.toInt() }) { v -> ev.brush = v.toInt().coerceAtLeast(1) }
         }
         ui.card(list, "", "Правки").let {
+            ui.btn(it, "СБРОСИТЬ ВИД (МАСШТАБ)", false) { ev.resetView() }
             ui.btn(it, "ОТМЕНИТЬ ШАГ", false) { ev.undo() }
             ui.btn(it, "ВСЁ УБРАТЬ", false) { ev.fillAll(false) }
             ui.btn(it, "ВСЁ ЗАЛИТЬ", false) { ev.fillAll(true) }

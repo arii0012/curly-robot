@@ -273,7 +273,7 @@ object Shapes {
                 c.drawOval(RectF(76f, 70f, 124f, 136f), clear)
             }
         }
-        val (on, rows) = bitmapToOn(bmp, false, 90)
+        val (on, rows) = bitmapToOn(bmp, false, 90); bmp.recycle()
         return Mask(rows, on)
     }
 
@@ -284,7 +284,7 @@ object Shapes {
         val w = max(60, tp.measureText(t).toInt() + 24)
         val bmp = Bitmap.createBitmap(w, 170, Bitmap.Config.ARGB_8888)
         Canvas(bmp).drawText(t, 12f, 125f, tp)
-        val (on, rows) = bitmapToOn(bmp, false, 90)
+        val (on, rows) = bitmapToOn(bmp, false, 90); bmp.recycle()
         return Mask(rows, on)
     }
 
