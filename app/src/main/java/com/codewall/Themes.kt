@@ -20,6 +20,10 @@ object Themes {
         Theme("Дыра: падение", "Дыра приближается", 0xFF3DD6FF.toInt(), false, 1f, 1f, true, 3, "b:0", 1, 16, true, -1, 0.5f, 1.7f),
         Theme("Сюрприз", "Подарок → сердце", 0xFFFF2D6F.toInt(), false, 1f, 1f, true, 0, "b:0", 3, 15, true, 2, 1f, 1f),
         // сцены
+        Theme("3D Кристалл", "Вращающийся кристалл", 0xFF7FD6FF.toInt(), false, 0.8f, 1f, true, 3, "b:0", 7, 0, variant = 0),
+        Theme("Голограмма", "Тор-голограмма", 0xFF3DD6FF.toInt(), false, 0.8f, 1f, true, 3, "b:0", 7, 16, variant = 21),
+        Theme("Стеклянный ико", "Икосаэдр из стекла", 0xFFB07CFF.toInt(), false, 0.7f, 1f, true, 3, "b:0", 7, 18, variant = 42),
+        Theme("Неоновое сердце", "Каркасное 3D-сердце", 0xFFFF2D6F.toInt(), false, 0.7f, 1f, true, 0, "b:0", 7, 1, variant = 13),
         Theme("Сатурн", "Кольца и луна", 0xFFFFD84D.toInt(), false, 0.8f, 1f, true, 3, "b:0", 4, 20, variant = 4),
         Theme("Марс", "Красная планета", 0xFFFF6A00.toInt(), false, 0.8f, 1f, true, 3, "b:0", 4, 17, variant = 5),
         Theme("Галактика", "Спираль из частиц", 0xFFB07CFF.toInt(), false, 0.8f, 1f, true, 3, "b:0", 5, 18),
@@ -49,7 +53,7 @@ object Themes {
         p.colorInt = t.color; p.rainbow = t.rainbow; p.speed = t.speed; p.depth = t.depth
         p.glow = t.glow; p.bg = t.bg; p.shapeA = t.shape; p.scene = t.scene
         if (t.bright < 1f) p.bright = t.bright
-        when (t.scene) { 3 -> p.heartShape = t.variant; 4 -> p.planetStyle = t.variant; 5 -> p.galVar = t.variant; 6 -> p.mxVar = t.variant }
+        when (t.scene) { 3 -> p.heartShape = t.variant; 4 -> p.planetStyle = t.variant; 5 -> p.galVar = t.variant; 6 -> p.mxVar = t.variant; 7 -> { p.modelId = "m:" + (t.variant % 10); p.modelStyle = t.variant / 10 } }
         val wasPair = p.pair
         p.pair = t.pair
         if (t.pair) {

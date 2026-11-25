@@ -79,6 +79,14 @@ class Prefs(ctx: Context, name: String = "cfg") {
     var customA: Float get() = sf("customA", 0.7f); set(v) = pf("customA", v)
     var prevLive: String get() = ss("prevLive", ""); set(v) = ps("prevLive", v)
     var prevStatic: Boolean get() = sb("prevStatic", false); set(v) = pb("prevStatic", v)
+    // 3D-модели
+    var modelId: String get() = ss("modelId", "m:0"); set(v) = ps("modelId", v)
+    var modelStyle: Int get() = si("modelStyle", 0); set(v) = pi("modelStyle", v)
+    var modelSpin: Float get() = sf("modelSpin", 0.6f); set(v) = pf("modelSpin", v)
+    var modelGyro: Boolean get() = sb("modelGyro", true); set(v) = pb("modelGyro", v)
+    var modelShine: Float get() = sf("modelShine", 0.6f); set(v) = pf("modelShine", v)
+    var modelLight: Float get() = sf("modelLight", 0.9f); set(v) = pf("modelLight", v)
+    var modelAxis: Int get() = si("modelAxis", 0); set(v) = pi("modelAxis", v)
     // оформление приложения
     var skin: Int get() = si("skin", 0); set(v) = pi("skin", v)
     var accentCustom: Int get() = si("accentCustom", 0); set(v) = pi("accentCustom", v)
@@ -129,6 +137,6 @@ class Prefs(ctx: Context, name: String = "cfg") {
         )
         val SKIP = setOf("backup", "author", "shuffleAt", "shuffleIdx", "prevLive", "prevStatic")
         val PRESET_SKIP = SKIP + setOf("skin", "accentCustom", "corners", "skinWithTheme", "shuffle", "hud", "uiAnim", "customH", "customS", "customV", "customA", "skinV2")
-        val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt", "planetStyle", "ring", "codeText", "holeRings", "giftShape", "heartShape", "galVar", "mxVar", "moon")
+        val RELOAD_KEYS = setOf("scene", "shapeA", "shapeB", "stamp", "quality", "target", "words", "message", "label", "density", "colorInt", "planetStyle", "ring", "codeText", "holeRings", "giftShape", "heartShape", "galVar", "mxVar", "moon", "modelId", "modelAxis")
     }
 }

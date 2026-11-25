@@ -16,6 +16,7 @@ import android.widget.*
 /** Живой предпросмотр. В режиме interactive: палец двигает выбранный элемент, щипок меняет размер. */
 class PreviewView(ctx: Context, private val r: Renderer, private val p: Prefs) : View(ctx) {
     var interactive = false
+    var swipeModel = false
     var selected = -1
     var onScale: (() -> Unit)? = null
     private val t0 = SystemClock.uptimeMillis()
@@ -62,6 +63,13 @@ class PreviewView(ctx: Context, private val r: Renderer, private val p: Prefs) :
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (swipeModel) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lx = e.x; ly = e.y; parent?.requestDisallowInterceptTouchEvent(true) }
+                MotionEvent.ACTION_MOVE -> { r.swipe(e.x - lx, e.y - ly); lx = e.x; ly = e.y }
+            }
+            return true
+        }
         if (!interactive) return false
         sd.onTouchEvent(e)
         if (sd.isInProgress || e.pointerCount > 1) {

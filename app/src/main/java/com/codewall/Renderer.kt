@@ -99,6 +99,12 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
     /** Экран скрыт: гасим эффекты касаний. Рендер при этом уже остановлен сервисом. */
     fun onHidden() { for (i in 0..2) rpT[i] = 0L }
 
+    /** Поворот 3D-модели пальцем (dx, dy в пикселях). */
+    fun swipe(dx: Float, dy: Float) { scenes.model.swipe(dx, dy) }
+
+    /** Наклон телефона для 3D-модели (-1..1). */
+    fun setTilt(x: Float, y: Float) { scenes.model.setTilt(x, y) }
+
     fun reload() {
         applyText()
         rebuildSlots()
@@ -220,7 +226,7 @@ class Renderer(private val ctx: Context, private val prefs: Prefs) {
     private fun layer(c: Canvas, w: Float, h: Float, t: Float, scene: Int, sc: Float, cx: Float, cy: Float, col: Int, alpha: Float) {
         val a = (alpha * 255f).toInt()
         if (a < 255) c.saveLayerAlpha(null, a)
-        if (scene in 1..6) {
+        if (scene in 1..7) {
             c.save()
             c.translate(cx - w / 2, cy - h * 0.46f)
             c.scale(sc, sc, cx, cy)

@@ -31,6 +31,17 @@ class CodeWallpaperService : WallpaperService() {
         private var lastBat = 0L
         private var frozenT = -1f
         private var lastErr = 0L
+        private var tx = 0f
+        private var ty = 0f
+        private var lastMoveWake = 0L
+        private val tilt = TiltSensor(this@CodeWallpaperService) { x, y -> renderer.setTilt(x, y) }
+
+        private fun wants3D() = prefs.scene == 7 || (prefs.pair && prefs.lockScene == 7)
+
+        /** Датчик наклона включён только когда виден экран и выбрана 3D-модель с наклоном. */
+        private fun syncSensor() {
+            if (visible && prefs.modelGyro && wants3D() && !prefs.static) tilt.start() else tilt.stop()
+        }
 
         // журнал сбоев без спама: не чаще раза в 10 секунд
         private fun logErr(what: String, e: Throwable) {
@@ -61,6 +72,7 @@ class CodeWallpaperService : WallpaperService() {
                 if (saving && (freeze == 0 || freeze > 20)) freeze = 20
                 val expired = freeze > 0 && now - shownAt > freeze * 1000L
                 val frozen = prefs.static || expired
+                if (frozen) tilt.stop() else syncSensor()
                 val tUse = if (prefs.static) prefs.staticT
                     else if (expired) { if (frozenT < 0f) frozenT = real; frozenT }
                     else { frozenT = -1f; real }
@@ -79,6 +91,7 @@ class CodeWallpaperService : WallpaperService() {
 
         private fun wake() {
             shownAt = SystemClock.uptimeMillis()
+            syncSensor()
             if (visible) { h.removeCallbacks(tick); tick.run() }
         }
 
@@ -103,6 +116,7 @@ class CodeWallpaperService : WallpaperService() {
             prefs.sp.unregisterOnSharedPreferenceChangeListener(this)
             try { this@CodeWallpaperService.unregisterReceiver(rcv) } catch (e: Exception) { }
             h.removeCallbacks(tick)
+            tilt.stop()
             super.onDestroy()
         }
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
@@ -121,15 +135,27 @@ class CodeWallpaperService : WallpaperService() {
                 // экран скрыт: рендер полностью спит, ни одного отложенного кадра
                 h.removeCallbacksAndMessages(null)
                 renderer.onHidden()
+                tilt.stop()
             }
         }
         override fun onOffsetsChanged(x: Float, y: Float, xs: Float, ys: Float, xp: Int, yp: Int) {
             renderer.parX = x
         }
         override fun onTouchEvent(e: MotionEvent) {
-            if (e.actionMasked != MotionEvent.ACTION_DOWN || !prefs.touch) return
-            renderer.poke(e.x, e.y)
-            wake()
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    tx = e.x; ty = e.y
+                    if (prefs.touch) renderer.poke(e.x, e.y)
+                    wake()
+                }
+                MotionEvent.ACTION_MOVE -> if (wants3D()) {
+                    // вращение 3D-модели свайпом, с инерцией
+                    renderer.swipe(e.x - tx, e.y - ty)
+                    tx = e.x; ty = e.y
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastMoveWake > 60) { lastMoveWake = now; wake() }
+                }
+            }
         }
         override fun onSurfaceChanged(sh: SurfaceHolder?, f: Int, w: Int, hh: Int) {
             super.onSurfaceChanged(sh, f, w, hh)

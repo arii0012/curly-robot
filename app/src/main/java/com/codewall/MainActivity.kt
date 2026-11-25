@@ -144,6 +144,7 @@ class MainActivity : Activity() {
         val ph = (dm.heightPixels * frac).toInt()
         val pw = (ph * dm.widthPixels.toFloat() / dm.heightPixels).toInt()
         val v = PreviewView(this, r, p)
+        v.swipeModel = (p.scene == 7 && tab == 1)
         v.background = ui.bg(Color.BLACK, ui.LINE, 22)
         v.clipToOutline = true
         v.outlineProvider = ViewOutlineProvider.BACKGROUND
@@ -354,12 +355,58 @@ class MainActivity : Activity() {
         if (p.scene == 0) return
         ui.card(a, "", Formats.SCENES[p.scene]).let {
             ui.slider(it, "скорость", 0.3f, 2.5f, p.speed) { v -> p.speed = v }
-            ui.slider(it, "плотность частиц", 0.4f, 1.5f, p.density) { v -> p.density = v }
+            if (p.scene != 7) ui.slider(it, "плотность частиц", 0.4f, 1.5f, p.density) { v -> p.density = v }
             if (p.scene == 2) ui.field(it, "Надпись на сердце мишки", p.label) { s -> p.label = s.take(14) }
             if (p.scene == 3) {
                 ui.field(it, "Слова через запятую", p.words) { s -> p.words = s.take(200) }
                 ui.field(it, "Письмо (печатается внизу)", p.message) { s -> p.message = s.take(120) }
             }
+        }
+    }
+
+    // ----- 3D-модели -----
+    private fun pickModelFile() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        i.addCategory(Intent.CATEGORY_OPENABLE); i.type = "*/*"
+        startActivityForResult(i, 8)
+    }
+
+    private fun modelUi(a: LinearLayout) {
+        val cur = if (p.modelId.startsWith("m:")) (p.modelId.substring(2).toIntOrNull() ?: -1) else -1
+        ui.card(a, "", "3D-модель").let { c ->
+            ui.chips(c, Mesh.BUILTIN_NAMES, cur) { i -> p.modelId = "m:$i"; fillDesign(a) }
+            ui.btn(c, "ЗАГРУЗИТЬ ПО ССЫЛКЕ (URL)", true) { ModelImport(this, ui, p) { fillDesign(a) }.askUrl() }
+            ui.btn(c, "ВЫБРАТЬ ФАЙЛ (.obj .stl .glb .svg)", false) { pickModelFile() }
+        }
+        val mine = ModelStore.list(this)
+        if (mine.isNotEmpty()) ui.card(a, "", "Мои модели").let { c ->
+            for (f in mine) {
+                val row = LinearLayout(this)
+                row.gravity = Gravity.CENTER_VERTICAL
+                val tv = TextView(this)
+                tv.text = (if (p.modelId == f.first) "● " else "○ ") + f.second
+                tv.setTextColor(if (p.modelId == f.first) ui.TXT else ui.DIM); tv.textSize = 15f
+                tv.setOnClickListener { p.modelId = f.first; fillDesign(a) }
+                row.addView(tv, LinearLayout.LayoutParams(0, -2, 1f))
+                ui.small(row, "УДАЛИТЬ") {
+                    ModelStore.delete(this, f.first)
+                    if (p.modelId == f.first) p.modelId = "m:0"
+                    fillDesign(a)
+                }
+                c.addView(row, LinearLayout.LayoutParams(-1, ui.dp(44)))
+            }
+        }
+        ui.card(a, "", "Вид модели").let { c ->
+            val styles = listOf("Объём", "Каркас", "Голограмма", "X-Ray", "Стекло", "Глина")
+            for (s0 in 0 until 6 step 3) {
+                val part = styles.subList(s0, s0 + 3)
+                ui.chips(c, part, if (p.modelStyle in s0 until s0 + 3) p.modelStyle - s0 else -1) { k -> p.modelStyle = s0 + k; fillDesign(a) }
+            }
+            ui.slider(c, "вращение", 0f, 3f, p.modelSpin) { v -> p.modelSpin = v }
+            ui.slider(c, "блеск", 0f, 1f, p.modelShine, { v -> pct(v) }) { v -> p.modelShine = v }
+            ui.slider(c, "угол света", 0f, 6.28f, p.modelLight, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.modelLight = v }
+            ui.toggle(c, "Наклон телефона вращает модель", p.modelGyro) { v -> p.modelGyro = v }
+            ui.chips(c, listOf("Оси: как есть", "Z вверх", "Вверх ногами"), p.modelAxis) { i -> p.modelAxis = i }
         }
     }
 
@@ -403,6 +450,7 @@ class MainActivity : Activity() {
                 ui.toggle(c, "Луна", p.moon) { v -> p.moon = v }
             }
             5 -> variantCard(a, "Галактика", listOf("Спираль", "4 рукава", "Эллипс", "Кольцо", "Вихрь"), p.galVar, { i -> p.galVar = i })
+            7 -> modelUi(a)
             else -> variantCard(a, "Символы дождя", listOf("Катакана", "Двоичный", "Латиница", "Сердечки", "Код"), p.mxVar, { i -> p.mxVar = i })
         }
     }
@@ -563,6 +611,7 @@ class MainActivity : Activity() {
                     ui.slider(c, "наклон", 0.05f, 1.4f, p.holeTilt, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeTilt = v }
                     ui.slider(c, "поворот", -1.6f, 1.6f, p.holeRoll, { v -> "" + (v * 57.3f).toInt() + "°" }) { v -> p.holeRoll = v }
                 }
+                7 -> ui.slider(c, "скорость вращения", 0f, 3f, p.modelSpin) { v -> p.modelSpin = v }
                 else -> ui.slider(c, "скорость падения", 0.2f, 3f, p.speed) { v -> p.speed = v }
             }
         }
@@ -862,6 +911,7 @@ class MainActivity : Activity() {
                 startActivityForResult(i, 5)
             }
             2 -> importFile(uri)
+            8 -> ModelImport(this, ui, p) { showTab(tab) }.fromUri(uri)
             3 -> {
                 val data = pendingBytes
                 if (data == null) ui.toast("Нечего сохранять")

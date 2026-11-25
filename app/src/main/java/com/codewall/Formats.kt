@@ -14,7 +14,7 @@ import java.io.ByteArrayOutputStream
 object Formats {
     const val MAX = 262144
     val CATEGORIES = listOf("Минимализм", "Киберпанк", "Игры", "Аниме", "Животные", "Природа", "Космос", "Разное")
-    val SCENES = listOf("Код-фигура", "Чёрная дыра", "Подарок", "Сердце из слов", "Планета", "Галактика", "Матрица")
+    val SCENES = listOf("Код-фигура", "Чёрная дыра", "Подарок", "Сердце из слов", "Планета", "Галактика", "Матрица", "3D-модель")
 
     class Invalid(m: String) : Exception(m)
     class Poa(val name: String, val author: String, val category: String, val desc: String, val shapeName: String?,
@@ -131,6 +131,8 @@ object Formats {
         sc.put("type", p.scene); sc.put("target", p.target); sc.put("density", p.density.toDouble())
         val wa = JSONArray(); for (w in p.words.split(',').map { it.trim() }.filter { it.isNotEmpty() }.take(14)) wa.put(w.take(18))
         sc.put("words", wa); sc.put("message", p.message.take(120)); sc.put("label", p.label.take(14))
+        if (p.modelId.startsWith("m:")) sc.put("model", (p.modelId.substring(2).toIntOrNull() ?: 0).coerceIn(0, 3))
+        sc.put("modelStyle", p.modelStyle)
         o.put("scene", sc)
         val plain = JSONObject(o.toString())
         o.put("sum", Crypto.sha256(canon(plain)))
@@ -189,8 +191,8 @@ object Formats {
         var scene: JSONObject? = null
         if (o.has("scene")) {
             val sc = o.optJSONObject("scene") ?: throw Invalid("поле «scene» повреждено")
-            onlyKeys(sc, setOf("type", "target", "density", "words", "message", "label"))
-            num(sc, "type", 0.0, 6.0); num(sc, "target", 0.0, 1.0); num(sc, "density", 0.4, 1.5)
+            onlyKeys(sc, setOf("type", "target", "density", "words", "message", "label", "model", "modelStyle"))
+            num(sc, "type", 0.0, 7.0); num(sc, "target", 0.0, 1.0); num(sc, "density", 0.4, 1.5); num(sc, "model", 0.0, 3.0); num(sc, "modelStyle", 0.0, 5.0)
             if (sc.has("words")) {
                 val wa = sc.optJSONArray("words") ?: throw Invalid("слова повреждены")
                 if (wa.length() > 14) throw Invalid("слишком много слов")
@@ -209,7 +211,7 @@ object Formats {
     fun items(p: Poa): List<Pair<String, String>> {
         val l = ArrayList<Pair<String, String>>()
         val sc = p.scene
-        if (sc != null) l.add(Pair("scene", "Сцена: " + SCENES[sc.optInt("type", 0).coerceIn(0, 6)]))
+        if (sc != null) l.add(Pair("scene", "Сцена: " + SCENES[sc.optInt("type", 0).coerceIn(0, 7)]))
         if (p.shape != null) l.add(Pair("shape", "Фигура «" + p.shapeName + "»"))
         val s = p.settings
         if (s != null) {
@@ -226,12 +228,14 @@ object Formats {
     fun applyPoa(p: Prefs, ctx: Context, poa: Poa, keys: Set<String>, persist: Boolean = true) {
         val s = poa.settings; val w = poa.widgets; val sc = poa.scene; val sh = poa.shape
         if (sc != null && "scene" in keys) {
-            p.scene = sc.optInt("type", 0).coerceIn(0, 6); p.target = sc.optInt("target", 0).coerceIn(0, 1)
+            p.scene = sc.optInt("type", 0).coerceIn(0, 7); p.target = sc.optInt("target", 0).coerceIn(0, 1)
             p.density = sc.optDouble("density", 1.0).toFloat().coerceIn(0.4f, 1.5f)
             val wa = sc.optJSONArray("words")
             if (wa != null) { val l = ArrayList<String>(); for (k in 0 until wa.length()) l.add(clean(wa.getString(k), 18)); p.words = l.filter { it.isNotEmpty() }.joinToString(",") }
             if (sc.has("message")) p.message = clean(sc.getString("message"), 120)
             if (sc.has("label")) p.label = clean(sc.getString("label"), 14)
+            if (sc.has("model")) p.modelId = "m:" + sc.optInt("model", 0).coerceIn(0, 3)
+            if (sc.has("modelStyle")) p.modelStyle = sc.optInt("modelStyle", 0).coerceIn(0, 5)
         }
         if ("shape" in keys && sh != null) {
             if (persist) p.shapeA = Shapes.save(ctx, poa.shapeName ?: poa.name, sh)

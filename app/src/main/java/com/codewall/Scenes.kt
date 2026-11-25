@@ -23,6 +23,7 @@ class Scenes(private val ctx: Context, private val prefs: Prefs) {
     private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.BLACK }
     private var glowSh: RadialGradient? = null
     private var glowKey = 0
+    val model = ModelRenderer(ctx, prefs)
 
     fun reload() { built.fill(false) }
 
@@ -33,13 +34,13 @@ class Scenes(private val ctx: Context, private val prefs: Prefs) {
 
     fun draw(type: Int, c: Canvas, w: Float, h: Float, t: Float, cyFrac: Float) {
         if (!built[type]) {
-            when (type) { 1 -> buildHole(); 2 -> buildGift(); 3 -> buildHeart(); 4 -> buildPlanet(); 5 -> buildGalaxy(); else -> buildMatrix() }
+            when (type) { 1 -> buildHole(); 2 -> buildGift(); 3 -> buildHeart(); 4 -> buildPlanet(); 5 -> buildGalaxy(); 6 -> buildMatrix(); else -> model.build() }
             built[type] = true
         }
         c.drawColor(Color.BLACK)
         when (type) {
             1 -> drawHole(c, w, h, t, cyFrac); 2 -> drawGift(c, w, h, t, cyFrac); 3 -> drawHeart(c, w, h, t, cyFrac)
-            4 -> drawPlanet(c, w, h, t, cyFrac); 5 -> drawGalaxy(c, w, h, t, cyFrac); else -> drawMatrix(c, w, h, t, cyFrac)
+            4 -> drawPlanet(c, w, h, t, cyFrac); 5 -> drawGalaxy(c, w, h, t, cyFrac); 6 -> drawMatrix(c, w, h, t, cyFrac); else -> model.draw(c, w, h, t, cyFrac)
         }
     }
 

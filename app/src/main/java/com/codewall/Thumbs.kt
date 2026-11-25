@@ -107,7 +107,7 @@ object Gallery {
                 try {
                     val bmp = Thumbs.render(a, "s:$s", 200, 360, Thumbs.timeFor(s)) { tp ->
                         tp.scene = s
-                        tp.colorInt = when (s) { 1 -> 0xFF3DD6FF.toInt(); 2 -> 0xFFFF5DA8.toInt(); 3 -> 0xFFFF2D6F.toInt(); 4 -> 0xFF3DD6FF.toInt(); 5 -> 0xFFB07CFF.toInt(); else -> 0xFF4DFF88.toInt() }
+                        tp.colorInt = when (s) { 1 -> 0xFF3DD6FF.toInt(); 2 -> 0xFFFF5DA8.toInt(); 3 -> 0xFFFF2D6F.toInt(); 4 -> 0xFF3DD6FF.toInt(); 5 -> 0xFFB07CFF.toInt(); 7 -> 0xFF7FD6FF.toInt(); else -> 0xFF4DFF88.toInt() }
                     }
                     a.runOnUiThread { views[s]?.setImageBitmap(bmp) }
                 } catch (e: Exception) { }
